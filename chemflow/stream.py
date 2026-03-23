@@ -1,0 +1,413 @@
+"""Stream クラス（リデザイン版）
+
+内部状態は各成分のモル流量のみ保持。
+示性式文字列から分子量を自動計算。
+演算子で装置接続を表現。
+"""
+
+from __future__ import annotations
+
+import csv
+from typing import TYPE_CHECKING
+
+import numpy as np
+
+from chemflow.component import Component
+from chemflow.errors import BasisError
+from chemflow.registry import ComponentRegistry
+
+if TYPE_CHECKING:
+    from chemflow.expression import MixExpression, ScaleExpression
+
+
+class Stream:
+    """プロセスストリーム。
+
+    Examples
+    --------
+    固定:       Stream({"H2": 20, "N2": 60})
+    basis指定:  Stream({"H2": 20, "N2": 60}, basis="mass")
+    比率+total: Stream({"H2": 0.75, "N2": 0.25}, basis="mole_frac", total=100)
+    組成のみ:   Stream({"H2": 0.75, "N2": 0.25}, basis="mole_frac")
+    未知:       Stream(components=["H2", "N2"])
+    同組成:     Stream(composition=other_stream)
+    タプル混在: Stream({"N2": (20, "mol"), "H2": (120, "mass")})
+    """
+
+    def __init__(
+        self,
+        flows: dict[str, float | tuple[float, str]] | None = None,
+        *,
+        basis: str = "mol",
+        total: float | None = None,
+        components: list[str] | None = None,
+        composition: Stream | None = None,
+        name: str | None = None,
+    ):
+        self.name = name
+        self._fixed = False
+        self._composition_constraints: list = []
+
+        if composition is not None:
+            # 他ストリームと同組成、total未知
+            self.components = list(composition.components)
+            self.n_components = len(self.components)
+            self.molar_flows = np.ones(self.n_components)  # 初期推定
+            self._fixed = False
+            self._register_composition_constraint(composition)
+            self._auto_register()
+            return
+
+        if components is not None and flows is None:
+            # 未知ストリーム
+            self.components = ComponentRegistry.get_many(components)
+            self.n_components = len(self.components)
+            self.molar_flows = np.ones(self.n_components)  # 初期推定（非ゼロ）
+            self._fixed = False
+            self._auto_register()
+            return
+
+        if flows is None:
+            self.components = []
+            self.n_components = 0
+            self.molar_flows = np.array([])
+            self._fixed = False
+            self._auto_register()
+            return
+
+        # flows dict あり
+        self._init_from_flows(flows, basis, total)
+        self._auto_register()
+
+    def _init_from_flows(self, flows: dict, basis: str, total: float | None):
+        """flows dict からモル流量を初期化する。"""
+        # タプル形式チェック: {"N2": (20, "mol"), "H2": (120, "mass")}
+        first_val = next(iter(flows.values()))
+        is_tuple = isinstance(first_val, (tuple, list))
+
+        if is_tuple:
+            self._init_from_tuple_flows(flows)
+            return
+
+        formulas = list(flows.keys())
+        values = np.array(list(flows.values()), dtype=float)
+        self.components = ComponentRegistry.get_many(formulas)
+        self.n_components = len(self.components)
+        mws = np.array([c.mw for c in self.components])
+        nvols = np.array([c.normal_volume for c in self.components])
+
+        abs_bases = {"mol", "mass", "normal_volume"}
+        frac_bases = {"mole_frac", "mass_frac", "volume_frac"}
+
+        if basis in abs_bases:
+            self.molar_flows = self._convert_abs_to_mol(values, basis, mws, nvols)
+            self._fixed = True
+        elif basis in frac_bases:
+            if total is not None:
+                self.molar_flows = self._convert_frac_to_mol(
+                    values, basis, total, mws, nvols
+                )
+                self._fixed = True
+            else:
+                # 組成のみ、total 未知
+                self.molar_flows = np.ones(self.n_components)  # 初期推定
+                self._fixed = False
+                self._register_frac_constraint(values, basis)
+        else:
+            raise BasisError(f"Unknown basis: '{basis}'")
+
+    def _init_from_tuple_flows(self, flows: dict):
+        """成分ごとに単位を指定するタプル形式。"""
+        formulas = list(flows.keys())
+        self.components = ComponentRegistry.get_many(formulas)
+        self.n_components = len(self.components)
+        self.molar_flows = np.zeros(self.n_components)
+
+        for i, (formula, val_unit) in enumerate(flows.items()):
+            value, unit = val_unit
+            mw = self.components[i].mw
+            nvol = self.components[i].normal_volume
+            if unit == "mol":
+                self.molar_flows[i] = value
+            elif unit == "mass":
+                self.molar_flows[i] = value / mw
+            elif unit == "normal_volume":
+                self.molar_flows[i] = value / nvol
+            else:
+                raise BasisError(
+                    f"Tuple basis must be 'mol', 'mass', or 'normal_volume', got '{unit}'"
+                )
+        self._fixed = True
+
+    @staticmethod
+    def _convert_abs_to_mol(values, basis, mws, nvols):
+        if basis == "mol":
+            return values.copy()
+        elif basis == "mass":
+            return values / mws
+        elif basis == "normal_volume":
+            return values / nvols
+        raise BasisError(f"Unknown absolute basis: '{basis}'")
+
+    @staticmethod
+    def _convert_frac_to_mol(fracs, basis, total, mws, nvols):
+        if basis == "mole_frac":
+            return fracs * total
+        elif basis == "mass_frac":
+            # total = total mass flow
+            # mass_i = fracs_i * total
+            # mol_i = mass_i / mw_i
+            return (fracs * total) / mws
+        elif basis == "volume_frac":
+            # total = total normal volume flow
+            # vol_i = fracs_i * total
+            # mol_i = vol_i / nvol_i
+            return (fracs * total) / nvols
+        raise BasisError(f"Unknown fraction basis: '{basis}'")
+
+    def _register_frac_constraint(self, fracs, basis):
+        """比率系 basis で total なしの場合の組成制約。"""
+        fracs = fracs / fracs.sum()  # 正規化
+        # 元の成分リストを記録（後から追加された成分は0に拘束）
+        original_formulas = [c.formula for c in self.components]
+        original_fracs = dict(zip(original_formulas, fracs))
+
+        def constraint():
+            # 全成分（動的追加含む）に対する比率目標を構築
+            target = np.zeros(self.n_components)
+            for i, c in enumerate(self.components):
+                target[i] = original_fracs.get(c.formula, 0.0)
+            # 再正規化（追加成分のfrac=0なので元と同じだが安全のため）
+            s = target.sum()
+            if s > 0:
+                target = target / s
+
+            mws = np.array([c.mw for c in self.components])
+            nvols = np.array([c.normal_volume for c in self.components])
+            if basis == "mole_frac":
+                current = self.mole_fractions
+            elif basis == "mass_frac":
+                mass = self.molar_flows * mws
+                total_mass = mass.sum()
+                current = mass / total_mass if total_mass > 0 else np.zeros_like(mass)
+            elif basis == "volume_frac":
+                vol = self.molar_flows * nvols
+                total_vol = vol.sum()
+                current = vol / total_vol if total_vol > 0 else np.zeros_like(vol)
+            else:
+                return np.array([])
+            # n-1 個の独立な制約
+            return current[:-1] - target[:-1]
+
+        self._composition_constraints.append(constraint)
+
+    def _register_composition_constraint(self, other: Stream):
+        """他ストリームと同じ組成（モル比率）を持つ制約。
+
+        成分が動的追加されても対応する。
+        自身の成分順で other の成分を参照する。
+        """
+        def constraint():
+            # other の組成を取得して、self の成分順にマッピング
+            other_frac_dict = {}
+            for i, c in enumerate(other.components):
+                other_frac_dict[c.formula] = other.mole_fractions[i]
+
+            target = np.zeros(self.n_components)
+            for i, c in enumerate(self.components):
+                target[i] = other_frac_dict.get(c.formula, 0.0)
+
+            my_frac = self.mole_fractions
+            # n-1 個の独立な制約
+            return my_frac[:-1] - target[:-1]
+
+        self._composition_constraints.append(constraint)
+
+    def _auto_register(self):
+        """グローバル Flowsheet に自動登録。"""
+        from chemflow.global_flowsheet import _get_flowsheet
+        fs = _get_flowsheet()
+        if self not in fs.streams:
+            fs.add_stream(self)
+
+    def _add_component(self, formula: str):
+        """成分を動的に追加する（固定ストリームは0、未知は小さい初期推定値）。"""
+        existing = {c.formula for c in self.components}
+        if formula in existing:
+            return
+        comp = ComponentRegistry.get(formula)
+        self.components.append(comp)
+        self.n_components = len(self.components)
+        self.molar_flows = np.append(self.molar_flows, 0.0 if self._fixed else 0.1)
+
+    # --- プロパティ ---
+
+    @property
+    def total_molar_flow(self) -> float:
+        return float(np.sum(self.molar_flows))
+
+    @property
+    def mole_fractions(self) -> np.ndarray:
+        total = self.total_molar_flow
+        if total == 0:
+            return np.zeros(self.n_components)
+        return self.molar_flows / total
+
+    @property
+    def mass_flows(self) -> np.ndarray:
+        mws = np.array([c.mw for c in self.components])
+        return self.molar_flows * mws
+
+    @property
+    def total_mass_flow(self) -> float:
+        return float(np.sum(self.mass_flows))
+
+    @property
+    def mass_fractions(self) -> np.ndarray:
+        total = self.total_mass_flow
+        if total == 0:
+            return np.zeros(self.n_components)
+        return self.mass_flows / total
+
+    @property
+    def normal_volume_flows(self) -> np.ndarray:
+        nvols = np.array([c.normal_volume for c in self.components])
+        return self.molar_flows * nvols
+
+    @property
+    def total_normal_volume_flow(self) -> float:
+        return float(np.sum(self.normal_volume_flows))
+
+    @property
+    def volume_fractions(self) -> np.ndarray:
+        total = self.total_normal_volume_flow
+        if total == 0:
+            return np.zeros(self.n_components)
+        return self.normal_volume_flows / total
+
+    # --- 演算子 ---
+
+    def __add__(self, other) -> MixExpression:
+        from chemflow.expression import MixExpression
+        if isinstance(other, MixExpression):
+            return MixExpression([self] + other._operands)
+        return MixExpression([self, other])
+
+    def __radd__(self, other) -> MixExpression:
+        from chemflow.expression import MixExpression
+        if isinstance(other, MixExpression):
+            return MixExpression(other._operands + [self])
+        if other == 0:
+            # sum() 対応
+            return MixExpression([self])
+        return MixExpression([other, self])
+
+    def __mul__(self, ratio: float) -> ScaleExpression:
+        from chemflow.expression import ScaleExpression
+        return ScaleExpression(self, float(ratio))
+
+    def __rmul__(self, ratio: float) -> ScaleExpression:
+        from chemflow.expression import ScaleExpression
+        return ScaleExpression(self, float(ratio))
+
+    # --- リアクター ---
+
+    def react(
+        self,
+        stoichiometry: dict[str, float],
+        key: str,
+        conversion: float,
+    ) -> Stream:
+        """転化率指定リアクター。出口 Stream を返す。"""
+        from chemflow.global_flowsheet import _get_flowsheet
+        from chemflow.units import Reactor
+
+        # 出口成分 = 入口 + 化学量論に含まれる生成物
+        outlet_formulas = [c.formula for c in self.components]
+        for formula in stoichiometry:
+            if formula not in outlet_formulas:
+                outlet_formulas.append(formula)
+
+        outlet = Stream(components=outlet_formulas)
+
+        # 入口にも不足成分を追加（次元を揃える）
+        for formula in outlet_formulas:
+            self._add_component(formula)
+
+        # 化学量論係数を配列に変換
+        stoich_array = np.zeros(len(outlet_formulas))
+        for formula, coeff in stoichiometry.items():
+            idx = outlet_formulas.index(formula)
+            stoich_array[idx] = coeff
+
+        key_idx = outlet_formulas.index(key)
+
+        reactor = Reactor(
+            "RX_auto",
+            inlet=self,
+            outlet=outlet,
+            stoichiometry=stoich_array.tolist(),
+            key_component=key_idx,
+            conversion=conversion,
+        )
+        _get_flowsheet().add_unit(reactor)
+
+        return outlet
+
+    def gibbs_react(
+        self,
+        T: float,
+        P: float | str,
+        species: list[str],
+    ) -> Stream:
+        """Gibbs リアクター。Cantera 使用。出口 Stream を返す。"""
+        from chemflow.global_flowsheet import _get_flowsheet
+        from chemflow.gibbs import GibbsReactor, parse_pressure
+
+        P_pascal = parse_pressure(P)
+
+        # 出口成分 = species リスト
+        outlet_formulas = list(species)
+        outlet = Stream(components=outlet_formulas)
+
+        # 入口にも不足成分を追加
+        for formula in outlet_formulas:
+            self._add_component(formula)
+
+        gibbs = GibbsReactor(
+            inlet=self,
+            outlet=outlet,
+            T_celsius=T,
+            P_pascal=P_pascal,
+            species=species,
+        )
+        _get_flowsheet().add_unit(gibbs)
+
+        return outlet
+
+    # --- CSV ---
+
+    @classmethod
+    def from_csv(cls, path: str, name: str | None = None, **kwargs) -> Stream:
+        """CSV ファイルからストリームを生成する。
+
+        CSV format: component,molflow (header row required)
+        """
+        flows = {}
+        with open(path, newline="") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                comp = row["component"].strip()
+                val = float(row["molflow"])
+                flows[comp] = val
+        return cls(flows, name=name, **kwargs)
+
+    # --- 表示 ---
+
+    def __repr__(self) -> str:
+        label = self.name or "unnamed"
+        flows = ", ".join(
+            f"{c.formula}={f:.4g}"
+            for c, f in zip(self.components, self.molar_flows)
+        )
+        return f"Stream({label!r}: {flows})"
