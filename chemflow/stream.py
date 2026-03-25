@@ -385,6 +385,99 @@ class Stream:
 
         return outlet
 
+    def multi_react(
+        self,
+        reactions: list[dict[str, float]],
+        key: str,
+        conversion: float,
+        selectivities: list[float],
+    ) -> Stream:
+        """複数同時反応リアクター。
+
+        Parameters
+        ----------
+        reactions : list[dict[str, float]]
+            各反応の化学量論係数リスト
+        key : str
+            基準成分の示性式
+        conversion : float
+            基準成分の全体転化率 (0~1)
+        selectivities : list[float]
+            各反応の選択率（基準成分消費量ベース、合計=1）
+        """
+        from chemflow.global_flowsheet import _get_flowsheet
+        from chemflow.units import MultiReactor
+
+        # 全反応から出口成分を収集
+        outlet_formulas = [c.formula for c in self.components]
+        for rxn in reactions:
+            for formula in rxn:
+                if formula not in outlet_formulas:
+                    outlet_formulas.append(formula)
+
+        outlet = Stream(components=outlet_formulas)
+
+        for formula in outlet_formulas:
+            self._add_component(formula)
+
+        reactor = MultiReactor(
+            "MRX_auto",
+            inlet=self,
+            outlet=outlet,
+            reactions=reactions,
+            key=key,
+            conversion=conversion,
+            selectivities=selectivities,
+        )
+        _get_flowsheet().add_unit(reactor)
+        return outlet
+
+    def separate_water(
+        self,
+        T: float,
+        P: float | str,
+        name_gas: str | None = None,
+        name_water: str | None = None,
+    ) -> tuple[Stream, Stream]:
+        """Antoine式に基づく水分離。
+
+        Parameters
+        ----------
+        T : float
+            温度 [°C]
+        P : float or str
+            圧力 [Pa] or 文字列 ("3MPaG" 等)
+
+        Returns
+        -------
+        (gas_outlet, water_outlet)
+        """
+        from chemflow.global_flowsheet import _get_flowsheet
+        from chemflow.gibbs import parse_pressure
+        from chemflow.units import WaterSeparator
+
+        P_pascal = parse_pressure(P)
+
+        # ガス出口: 入口と同じ成分（H2O含む）
+        gas_formulas = [c.formula for c in self.components]
+        if "H2O" not in gas_formulas:
+            gas_formulas.append("H2O")
+        gas_outlet = Stream(components=gas_formulas, name=name_gas)
+
+        # 液水出口: H2O のみ
+        water_outlet = Stream(components=["H2O"], name=name_water)
+
+        sep = WaterSeparator(
+            "SEP_auto",
+            inlet=self,
+            gas_outlet=gas_outlet,
+            water_outlet=water_outlet,
+            T_celsius=T,
+            P_pascal=P_pascal,
+        )
+        _get_flowsheet().add_unit(sep)
+        return gas_outlet, water_outlet
+
     # --- CSV ---
 
     @classmethod

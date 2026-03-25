@@ -145,6 +145,74 @@ class Reactor:
         return self.outlet.molar_flows - expected
 
 
+class MultiReactor:
+    def __init__(self, name, inlet, outlet, reactions, key, conversion, selectivities):
+        self.name = name
+        self.inlet = inlet
+        self.outlet = outlet
+        self.reactions = reactions
+        self.key = key
+        self.conversion = conversion
+        self.selectivities = selectivities
+
+    def residuals(self) -> np.ndarray:
+        outlet_formulas = [c.formula for c in self.outlet.components]
+        inlet_flows = _get_flows_by_formula(self.inlet)
+        key_inlet = inlet_flows.get(self.key, 0.0)
+        expected = np.zeros(len(outlet_formulas))
+        for i, f in enumerate(outlet_formulas):
+            expected[i] = inlet_flows.get(f, 0.0)
+        for rxn, sel in zip(self.reactions, self.selectivities):
+            key_consumed = sel * self.conversion * key_inlet
+            key_stoich = abs(rxn[self.key])
+            extent = key_consumed / key_stoich
+            for f, coeff in rxn.items():
+                if f in outlet_formulas:
+                    expected[outlet_formulas.index(f)] += coeff * extent
+        return self.outlet.molar_flows - expected
+
+
+def antoine_water_psat(T_celsius: float) -> float:
+    A, B, C = 8.07131, 1730.63, 233.426
+    log_p_mmhg = A - B / (C + T_celsius)
+    return (10.0 ** log_p_mmhg) * 133.322
+
+
+class WaterSeparator:
+    def __init__(self, name, inlet, gas_outlet, water_outlet, T_celsius, P_pascal):
+        self.name = name
+        self.inlet = inlet
+        self.gas_outlet = gas_outlet
+        self.water_outlet = water_outlet
+        self.T_celsius = T_celsius
+        self.P_pascal = P_pascal
+
+    def residuals(self) -> np.ndarray:
+        inlet_flows = _get_flows_by_formula(self.inlet)
+        gas_formulas = [c.formula for c in self.gas_outlet.components]
+        p_sat = antoine_water_psat(self.T_celsius)
+        y_sat = p_sat / self.P_pascal
+        res = []
+        non_water_total = 0.0
+        for i, f in enumerate(gas_formulas):
+            if f != "H2O":
+                expected = inlet_flows.get(f, 0.0)
+                res.append(self.gas_outlet.molar_flows[i] - expected)
+                non_water_total += expected
+        h2o_in_gas = y_sat / (1.0 - y_sat) * non_water_total
+        h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
+        if h2o_idx is not None:
+            res.append(self.gas_outlet.molar_flows[h2o_idx] - h2o_in_gas)
+        h2o_total = inlet_flows.get("H2O", 0.0)
+        water_removed = h2o_total - h2o_in_gas
+        for i, c in enumerate(self.water_outlet.components):
+            if c.formula == "H2O":
+                res.append(self.water_outlet.molar_flows[i] - water_removed)
+            else:
+                res.append(self.water_outlet.molar_flows[i] - 0.0)
+        return np.array(res)
+
+
 # ============================================================
 # Gibbs Reactor (Cantera)
 # ============================================================
@@ -341,9 +409,9 @@ class Flowsheet:
             sep += f"  {'-' * abs_w} {'-' * rel_w}"
         print(sep)
         for sec_name, abs_key, rel_key, total_key in [
-            ("Volume", "nvol", "vol_frac", "total_nvol"),
-            ("mol", "mol", "mol_frac", "total_mol"),
-            ("weight", "mass", "mass_frac", "total_mass"),
+            ("Volume (Nm3/h)", "nvol", "vol_frac", "total_nvol"),
+            ("mol (mol/h)", "mol", "mol_frac", "total_mol"),
+            ("weight (g/h)", "mass", "mass_frac", "total_mass"),
         ]:
             print(f"[{sec_name}]")
             for i, f in enumerate(all_formulas):
@@ -410,6 +478,12 @@ class StreamExpression:
 
     def gibbs_react(self, T, P, species):
         return self._ensure_materialized().gibbs_react(T, P, species)
+
+    def multi_react(self, reactions, key, conversion, selectivities):
+        return self._ensure_materialized().multi_react(reactions, key, conversion, selectivities)
+
+    def separate_water(self, T, P, **kwargs):
+        return self._ensure_materialized().separate_water(T, P, **kwargs)
 
     def __add__(self, other):
         return self._ensure_materialized().__add__(other)
@@ -738,6 +812,35 @@ class Stream:
             T_celsius=T, P_pascal=P_pascal, species=species,
         ))
         return outlet
+
+    def multi_react(self, reactions, key, conversion, selectivities) -> Stream:
+        outlet_formulas = [c.formula for c in self.components]
+        for rxn in reactions:
+            for f in rxn:
+                if f not in outlet_formulas:
+                    outlet_formulas.append(f)
+        outlet = Stream(components=outlet_formulas)
+        for f in outlet_formulas:
+            self._add_component(f)
+        _get_flowsheet().add_unit(MultiReactor(
+            "MRX_auto", inlet=self, outlet=outlet,
+            reactions=reactions, key=key,
+            conversion=conversion, selectivities=selectivities,
+        ))
+        return outlet
+
+    def separate_water(self, T, P, name_gas=None, name_water=None):
+        P_pascal = parse_pressure(P)
+        gas_formulas = [c.formula for c in self.components]
+        if "H2O" not in gas_formulas:
+            gas_formulas.append("H2O")
+        gas_outlet = Stream(components=gas_formulas, name=name_gas)
+        water_outlet = Stream(components=["H2O"], name=name_water)
+        _get_flowsheet().add_unit(WaterSeparator(
+            "SEP_auto", inlet=self, gas_outlet=gas_outlet,
+            water_outlet=water_outlet, T_celsius=T, P_pascal=P_pascal,
+        ))
+        return gas_outlet, water_outlet
 
     @classmethod
     def from_csv(cls, path: str, name: str | None = None, **kwargs) -> Stream:

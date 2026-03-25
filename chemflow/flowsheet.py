@@ -177,9 +177,9 @@ class Flowsheet:
 
         # セクション定義
         sections = [
-            ("Volume", "nvol", "vol_frac", "total_nvol"),
-            ("mol", "mol", "mol_frac", "total_mol"),
-            ("weight", "mass", "mass_frac", "total_mass"),
+            ("Volume (Nm3/h)", "nvol", "vol_frac", "total_nvol"),
+            ("mol (mol/h)", "mol", "mol_frac", "total_mol"),
+            ("weight (g/h)", "mass", "mass_frac", "total_mass"),
         ]
 
         for sec_name, abs_key, rel_key, total_key in sections:

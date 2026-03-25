@@ -38,6 +38,12 @@ class StreamExpression:
     def gibbs_react(self, T, P, species):
         return self._ensure_materialized().gibbs_react(T, P, species)
 
+    def multi_react(self, reactions, key, conversion, selectivities):
+        return self._ensure_materialized().multi_react(reactions, key, conversion, selectivities)
+
+    def separate_water(self, T, P, **kwargs):
+        return self._ensure_materialized().separate_water(T, P, **kwargs)
+
     def __add__(self, other):
         stream = self._ensure_materialized()
         return stream.__add__(other)
