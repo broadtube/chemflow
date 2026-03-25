@@ -291,42 +291,71 @@ class Flowsheet:
         return result
 
     def print_streams(self) -> None:
-        for s in self.streams:
-            label = s.name or "unnamed"
-            n = s.n_components
-            if n == 0:
-                continue
-            mol = s.molar_flows
-            x = s.mole_fractions
-            mass = s.mass_flows
-            w = s.mass_fractions
-            nvol = s.normal_volume_flows
-            vf = s.volume_fractions
-            formulas = [c.formula for c in s.components]
-            fw = max(max(len(f) for f in formulas), 5)
-            col = 10
-            print(f"\n{'=' * 70}")
-            print(f" {label}")
-            print(f"{'=' * 70}")
-            header = f"  {'':>{fw}s}"
-            for f in formulas:
-                header += f"  {f:>{col}s}"
-            header += f"  {'Total':>{col}s}"
-            print(header)
-            print(f"  {'':>{fw}s}" + ("  " + "-" * col) * (n + 1))
-            for row_label, vals, total_val in [
-                ("mol", mol, s.total_molar_flow),
-                ("x", x, None),
-                ("mass", mass, s.total_mass_flow),
-                ("w", w, None),
-                ("Nm3", nvol, s.total_normal_volume_flow),
-                ("vf", vf, None),
-            ]:
-                row = f"  {row_label:>{fw}s}"
-                for v in vals:
-                    row += f"  {v:{col}.4f}"
-                row += f"  {total_val:{col}.4f}" if total_val is not None else f"  {'1.0000':>{col}s}"
+        streams = [s for s in self.streams if s.n_components > 0]
+        if not streams:
+            return
+        all_formulas: list[str] = []
+        seen: set[str] = set()
+        for s in streams:
+            for c in s.components:
+                if c.formula not in seen:
+                    all_formulas.append(c.formula)
+                    seen.add(c.formula)
+        mw_map = {f: ComponentRegistry.get(f).mw for f in all_formulas}
+
+        def _get_values(stream, formulas):
+            flow_map = {c.formula: i for i, c in enumerate(stream.components)}
+            mol = np.zeros(len(formulas))
+            mass = np.zeros(len(formulas))
+            nvol = np.zeros(len(formulas))
+            for i, f in enumerate(formulas):
+                if f in flow_map:
+                    j = flow_map[f]
+                    mol[i] = stream.molar_flows[j]
+                    mass[i] = stream.mass_flows[j]
+                    nvol[i] = stream.normal_volume_flows[j]
+            total_mol = mol.sum()
+            total_mass = mass.sum()
+            total_nvol = nvol.sum()
+            return {
+                "mol": mol, "mol_frac": mol / total_mol if total_mol else np.zeros_like(mol), "total_mol": total_mol,
+                "mass": mass, "mass_frac": mass / total_mass if total_mass else np.zeros_like(mass), "total_mass": total_mass,
+                "nvol": nvol, "vol_frac": nvol / total_nvol if total_nvol else np.zeros_like(nvol), "total_nvol": total_nvol,
+            }
+
+        data = [_get_values(s, all_formulas) for s in streams]
+        fw = max(max(len(f) for f in all_formulas), 5)
+        mw_w, abs_w, rel_w = 8, 10, 8
+        stream_w = abs_w + rel_w + 1
+        names = [s.name or f"S{i+1}" for i, s in enumerate(streams)]
+        h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
+        for nm in names:
+            h1 += f"  {nm:^{stream_w}s}"
+        print(h1)
+        h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
+        for _ in names:
+            h2 += f"  {'abs':>{abs_w}s} {'rel':>{rel_w}s}"
+        print(h2)
+        sep = f"{'':>{fw}s}  {'-' * mw_w}"
+        for _ in names:
+            sep += f"  {'-' * abs_w} {'-' * rel_w}"
+        print(sep)
+        for sec_name, abs_key, rel_key, total_key in [
+            ("Volume", "nvol", "vol_frac", "total_nvol"),
+            ("mol", "mol", "mol_frac", "total_mol"),
+            ("weight", "mass", "mass_frac", "total_mass"),
+        ]:
+            print(f"[{sec_name}]")
+            for i, f in enumerate(all_formulas):
+                row = f"  {f:>{fw}s}  {mw_map[f]:{mw_w}.2f}"
+                for d in data:
+                    row += f"  {d[abs_key][i]:{abs_w}.4f} {d[rel_key][i]:{rel_w}.4f}"
                 print(row)
+            row = f"  {'Total':>{fw}s}  {'':>{mw_w}s}"
+            for d in data:
+                row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
+            print(row)
+            print()
 
 
 # ============================================================
