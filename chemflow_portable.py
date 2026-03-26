@@ -361,12 +361,11 @@ class Flowsheet:
     def set_component_order(self, order: list[str]) -> None:
         self._component_order = order
 
-    def print_streams(self) -> None:
+    def _prepare_table_data(self):
         streams = [s for s in self.streams if s.n_components > 0]
         if not streams:
-            return
-        all_set: set[str] = set()
-        all_default: list[str] = []
+            return None
+        all_set, all_default = set(), []
         for s in streams:
             for c in s.components:
                 if c.formula not in all_set:
@@ -379,61 +378,83 @@ class Flowsheet:
         else:
             all_formulas = all_default
         mw_map = {f: ComponentRegistry.get(f).mw for f in all_formulas}
-
         def _get_values(stream, formulas):
             flow_map = {c.formula: i for i, c in enumerate(stream.components)}
-            mol = np.zeros(len(formulas))
-            mass = np.zeros(len(formulas))
-            nvol = np.zeros(len(formulas))
+            mol, mass, nvol = (np.zeros(len(formulas)) for _ in range(3))
             for i, f in enumerate(formulas):
                 if f in flow_map:
                     j = flow_map[f]
-                    mol[i] = stream.molar_flows[j]
-                    mass[i] = stream.mass_flows[j]
-                    nvol[i] = stream.normal_volume_flows[j]
-            total_mol = mol.sum()
-            total_mass = mass.sum()
-            total_nvol = nvol.sum()
+                    mol[i], mass[i], nvol[i] = stream.molar_flows[j], stream.mass_flows[j], stream.normal_volume_flows[j]
+            tm, tma, tv = mol.sum(), mass.sum(), nvol.sum()
             return {
-                "mol": mol, "mol_frac": mol / total_mol if total_mol else np.zeros_like(mol), "total_mol": total_mol,
-                "mass": mass, "mass_frac": mass / total_mass if total_mass else np.zeros_like(mass), "total_mass": total_mass,
-                "nvol": nvol, "vol_frac": nvol / total_nvol if total_nvol else np.zeros_like(nvol), "total_nvol": total_nvol,
+                "mol": mol, "mol_frac": mol/tm if tm else np.zeros_like(mol), "total_mol": tm,
+                "mass": mass, "mass_frac": mass/tma if tma else np.zeros_like(mass), "total_mass": tma,
+                "nvol": nvol, "vol_frac": nvol/tv if tv else np.zeros_like(nvol), "total_nvol": tv,
             }
+        return {"streams": streams, "all_formulas": all_formulas, "mw_map": mw_map,
+                "data": [_get_values(s, all_formulas) for s in streams],
+                "names": [s.name or f"S{i+1}" for i, s in enumerate(streams)]}
 
-        data = [_get_values(s, all_formulas) for s in streams]
+    def print_streams(self) -> None:
+        t = self._prepare_table_data()
+        if t is None:
+            return
+        all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
         fw = max(max(len(f) for f in all_formulas), 5)
         mw_w, abs_w, rel_w = 8, 10, 8
         stream_w = abs_w + rel_w + 1
-        names = [s.name or f"S{i+1}" for i, s in enumerate(streams)]
-        sections = [
-            ("mol",    "mol/h",  "mol%",  "mol",  "mol_frac",  "total_mol"),
-            ("Volume", "NL/h",   "vol%",  "nvol", "vol_frac",  "total_nvol"),
-            ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
-        ]
-        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
+        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
+            ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
+            ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
+            ("weight","g/h","wt%","mass","mass_frac","total_mass"),
+        ]:
             print(f"[{sec_name}]")
             h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
-            for nm in names:
-                h1 += f"  {nm:^{stream_w}s}"
+            for nm in names: h1 += f"  {nm:^{stream_w}s}"
             print(h1)
             h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-            for _ in names:
-                h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
+            for _ in names: h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
             print(h2)
             sep = f"{'':>{fw}s}  {'-' * mw_w}"
-            for _ in names:
-                sep += f"  {'-' * abs_w} {'-' * rel_w}"
+            for _ in names: sep += f"  {'-' * abs_w} {'-' * rel_w}"
             print(sep)
             for i, f in enumerate(all_formulas):
                 row = f"  {f:>{fw}s}  {mw_map[f]:{mw_w}.2f}"
-                for d in data:
-                    row += f"  {d[abs_key][i]:{abs_w}.4f} {d[rel_key][i]:{rel_w}.4f}"
+                for d in data: row += f"  {d[abs_key][i]:{abs_w}.4f} {d[rel_key][i]:{rel_w}.4f}"
                 print(row)
             row = f"  {'Total':>{fw}s}  {'':>{mw_w}s}"
-            for d in data:
-                row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
+            for d in data: row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
             print(row)
             print()
+
+    def export_csv(self, path: str) -> None:
+        import csv as csv_mod
+        t = self._prepare_table_data()
+        if t is None:
+            return
+        all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            w = csv_mod.writer(f)
+            for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
+                ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
+                ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
+                ("weight","g/h","wt%","mass","mass_frac","total_mass"),
+            ]:
+                w.writerow([f"[{sec_name}]"])
+                header = ["Component", "MW"]
+                for nm in names: header.extend([nm, ""])
+                w.writerow(header)
+                unit_row = ["", ""]
+                for _ in names: unit_row.extend([abs_unit, rel_unit])
+                w.writerow(unit_row)
+                for i, formula in enumerate(all_formulas):
+                    row = [formula, f"{mw_map[formula]:.2f}"]
+                    for d in data: row.extend([f"{d[abs_key][i]:.4f}", f"{d[rel_key][i]:.4f}"])
+                    w.writerow(row)
+                total_row = ["Total", ""]
+                for d in data: total_row.extend([f"{d[total_key]:.4f}", "1.0000"])
+                w.writerow(total_row)
+                w.writerow([])
 
 
 # ============================================================
@@ -470,6 +491,11 @@ def print_streams() -> None:
 def set_component_order(order: list[str]) -> None:
     """出力時の成分表示順序を設定する。"""
     _get_flowsheet().set_component_order(order)
+
+
+def export_csv(path: str) -> None:
+    """全ストリームの結果をCSVファイルに出力する。"""
+    _get_flowsheet().export_csv(path)
 
 
 # ============================================================

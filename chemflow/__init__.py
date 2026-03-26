@@ -2,7 +2,7 @@
 
 from chemflow.stream import Stream
 from chemflow.api import eq, constrain
-from chemflow.global_flowsheet import solve, reset, print_streams, set_component_order
+from chemflow.global_flowsheet import solve, reset, print_streams, set_component_order, export_csv
 from chemflow.errors import (
     ChemflowError,
     FormulaError,
@@ -20,6 +20,7 @@ __all__ = [
     "reset",
     "print_streams",
     "set_component_order",
+    "export_csv",
     "ChemflowError",
     "FormulaError",
     "BasisError",

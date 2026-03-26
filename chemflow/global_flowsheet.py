@@ -37,3 +37,8 @@ def print_streams() -> None:
 def set_component_order(order: list[str]) -> None:
     """出力時の成分表示順序を設定する。"""
     _get_flowsheet().set_component_order(order)
+
+
+def export_csv(path: str) -> None:
+    """全ストリームの結果をCSVファイルに出力する。"""
+    _get_flowsheet().export_csv(path)
