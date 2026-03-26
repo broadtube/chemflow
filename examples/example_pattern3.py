@@ -10,7 +10,7 @@
   ガスは一部パージ、残り循環
 """
 
-from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order
+from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, export_csv
 
 # ========================================
 # パターン1: Gibbs平衡（前段）
@@ -85,6 +85,8 @@ print("\n" + "=" * 60)
 print("パターン3: 循環系 + 3反応 + 水分離")
 print("=" * 60)
 print_streams()
+export_csv("pattern3_result.csv")
+print("\nCSV出力: pattern3_result.csv")
 
 print("\n--- 制約検証 ---")
 print(f"C3 total mol:     {C3.total_molar_flow:.4f} (target: 30)")
