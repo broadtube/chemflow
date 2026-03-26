@@ -10,7 +10,7 @@
   ガスは一部パージ、残り循環
 """
 
-from chemflow import Stream, eq, constrain, solve, reset, print_streams
+from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order
 
 # ========================================
 # パターン1: Gibbs平衡（前段）
@@ -34,7 +34,7 @@ print(f"P1 組成: { {k: f'{v:.4f}' for k, v in e1_comp.items()} }")
 # ========================================
 reset()
 
-comps = ["CO2", "CH4", "H2O", "CO", "H2", "CH3COOH", "CH3CHO"]
+comps = ["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"]
 
 # Feed = P1の出口（全量）
 A3 = Stream(e1_comp, basis="mole_frac", total=e1_total, name="Feed")
@@ -77,6 +77,9 @@ constrain(lambda: (G3.mole_fractions - H3.mole_fractions)[:-1])
 constrain(lambda: C3.total_molar_flow - 30)
 
 solve()
+
+# 成分表示順序を設定
+set_component_order(["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"])
 
 print("\n" + "=" * 60)
 print("パターン3: 循環系 + 3反応 + 水分離")

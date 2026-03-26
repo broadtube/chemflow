@@ -358,17 +358,26 @@ class Flowsheet:
             raise SolveError(f"Solver did not converge: {result.message}")
         return result
 
+    def set_component_order(self, order: list[str]) -> None:
+        self._component_order = order
+
     def print_streams(self) -> None:
         streams = [s for s in self.streams if s.n_components > 0]
         if not streams:
             return
-        all_formulas: list[str] = []
-        seen: set[str] = set()
+        all_set: set[str] = set()
+        all_default: list[str] = []
         for s in streams:
             for c in s.components:
-                if c.formula not in seen:
-                    all_formulas.append(c.formula)
-                    seen.add(c.formula)
+                if c.formula not in all_set:
+                    all_default.append(c.formula)
+                    all_set.add(c.formula)
+        if hasattr(self, "_component_order") and self._component_order:
+            ordered = [f for f in self._component_order if f in all_set]
+            remaining = [f for f in all_default if f not in ordered]
+            all_formulas = ordered + remaining
+        else:
+            all_formulas = all_default
         mw_map = {f: ComponentRegistry.get(f).mw for f in all_formulas}
 
         def _get_values(stream, formulas):
@@ -456,6 +465,11 @@ def solve(**kwargs):
 def print_streams() -> None:
     """全ストリームの結果を一覧表示する。"""
     _get_flowsheet().print_streams()
+
+
+def set_component_order(order: list[str]) -> None:
+    """出力時の成分表示順序を設定する。"""
+    _get_flowsheet().set_component_order(order)
 
 
 # ============================================================

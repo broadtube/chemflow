@@ -94,24 +94,43 @@ class Flowsheet:
     def fix_stream(self, stream) -> None:
         stream._fixed = True
 
+    def set_component_order(self, order: list[str]) -> None:
+        """出力時の成分表示順序を設定する。
+
+        Parameters
+        ----------
+        order : list[str]
+            示性式のリスト（例: ["H2", "CO", "CO2", "CH4", "H2O"]）
+            リストにない成分は末尾に出現順で追加される。
+        """
+        self._component_order = order
+
     def print_streams(self) -> None:
         """全ストリームを横並びの統合テーブルで表示する。
 
-        行: 3セクション（Volume / mol / weight）× (成分数 + Total)
+        行: 3セクション（mol / Volume / weight）× (成分数 + Total)
         列: 物質名 | MW | Stream1(abs, rel) | Stream2(abs, rel) | ...
         """
         streams = [s for s in self.streams if s.n_components > 0]
         if not streams:
             return
 
-        # 全ストリームの成分和集合（出現順を保持）
-        all_formulas: list[str] = []
-        seen: set[str] = set()
+        # 全ストリームの成分和集合
+        all_set: set[str] = set()
+        all_default: list[str] = []
         for s in streams:
             for c in s.components:
-                if c.formula not in seen:
-                    all_formulas.append(c.formula)
-                    seen.add(c.formula)
+                if c.formula not in all_set:
+                    all_default.append(c.formula)
+                    all_set.add(c.formula)
+
+        # ユーザー指定順序を適用
+        if hasattr(self, "_component_order") and self._component_order:
+            ordered = [f for f in self._component_order if f in all_set]
+            remaining = [f for f in all_default if f not in ordered]
+            all_formulas = ordered + remaining
+        else:
+            all_formulas = all_default
 
         # MW テーブル
         from chemflow.registry import ComponentRegistry

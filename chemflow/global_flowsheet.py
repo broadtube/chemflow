@@ -32,3 +32,8 @@ def solve(**kwargs):
 def print_streams() -> None:
     """全ストリームの結果を一覧表示する。"""
     _get_flowsheet().print_streams()
+
+
+def set_component_order(order: list[str]) -> None:
+    """出力時の成分表示順序を設定する。"""
+    _get_flowsheet().set_component_order(order)
