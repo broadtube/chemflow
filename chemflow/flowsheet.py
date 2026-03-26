@@ -157,34 +157,34 @@ class Flowsheet:
         # ストリーム名
         names = [s.name or f"S{i+1}" for i, s in enumerate(streams)]
 
-        # ヘッダー行1: ストリーム名
-        h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
-        for nm in names:
-            h1 += f"  {nm:^{stream_w}s}"
-        print(h1)
-
-        # ヘッダー行2: abs / rel
-        h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-        for _ in names:
-            h2 += f"  {'abs':>{abs_w}s} {'rel':>{rel_w}s}"
-        print(h2)
-
-        # 区切り線
-        sep = f"{'':>{fw}s}  {'-' * mw_w}"
-        for _ in names:
-            sep += f"  {'-' * abs_w} {'-' * rel_w}"
-        print(sep)
-
-        # セクション定義
+        # セクション定義: (セクション名, abs単位, rel単位, absキー, relキー, totalキー)
         sections = [
-            ("Volume (Nm3/h)", "nvol", "vol_frac", "total_nvol"),
-            ("mol (mol/h)", "mol", "mol_frac", "total_mol"),
-            ("weight (g/h)", "mass", "mass_frac", "total_mass"),
+            ("mol",    "mol/h",  "mol%",  "mol",  "mol_frac",  "total_mol"),
+            ("Volume", "NL/h",   "vol%",  "nvol", "vol_frac",  "total_nvol"),
+            ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
-        for sec_name, abs_key, rel_key, total_key in sections:
+        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             # セクションヘッダー
             print(f"[{sec_name}]")
+
+            # ストリーム名行
+            h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
+            for nm in names:
+                h1 += f"  {nm:^{stream_w}s}"
+            print(h1)
+
+            # 単位行
+            h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
+            for _ in names:
+                h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
+            print(h2)
+
+            # 区切り線
+            sep = f"{'':>{fw}s}  {'-' * mw_w}"
+            for _ in names:
+                sep += f"  {'-' * abs_w} {'-' * rel_w}"
+            print(sep)
 
             # 各成分行
             for i, f in enumerate(all_formulas):

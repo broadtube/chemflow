@@ -396,24 +396,25 @@ class Flowsheet:
         mw_w, abs_w, rel_w = 8, 10, 8
         stream_w = abs_w + rel_w + 1
         names = [s.name or f"S{i+1}" for i, s in enumerate(streams)]
-        h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
-        for nm in names:
-            h1 += f"  {nm:^{stream_w}s}"
-        print(h1)
-        h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-        for _ in names:
-            h2 += f"  {'abs':>{abs_w}s} {'rel':>{rel_w}s}"
-        print(h2)
-        sep = f"{'':>{fw}s}  {'-' * mw_w}"
-        for _ in names:
-            sep += f"  {'-' * abs_w} {'-' * rel_w}"
-        print(sep)
-        for sec_name, abs_key, rel_key, total_key in [
-            ("Volume (Nm3/h)", "nvol", "vol_frac", "total_nvol"),
-            ("mol (mol/h)", "mol", "mol_frac", "total_mol"),
-            ("weight (g/h)", "mass", "mass_frac", "total_mass"),
-        ]:
+        sections = [
+            ("mol",    "mol/h",  "mol%",  "mol",  "mol_frac",  "total_mol"),
+            ("Volume", "NL/h",   "vol%",  "nvol", "vol_frac",  "total_nvol"),
+            ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
+        ]
+        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             print(f"[{sec_name}]")
+            h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
+            for nm in names:
+                h1 += f"  {nm:^{stream_w}s}"
+            print(h1)
+            h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
+            for _ in names:
+                h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
+            print(h2)
+            sep = f"{'':>{fw}s}  {'-' * mw_w}"
+            for _ in names:
+                sep += f"  {'-' * abs_w} {'-' * rel_w}"
+            print(sep)
             for i, f in enumerate(all_formulas):
                 row = f"  {f:>{fw}s}  {mw_map[f]:{mw_w}.2f}"
                 for d in data:
