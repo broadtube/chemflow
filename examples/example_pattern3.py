@@ -43,7 +43,7 @@ D3 = C3.multi_react(
 )
 
 # H2O 10mol/h を追加混合
-H2O_feed = Stream({"H2O": 10}, name="H2O_feed")
+H2O_feed = Stream({"H2O": 30}, name="H2O_feed")
 D3_mixed = D3 + H2O_feed
 
 # 水分離 (40°C, 3MPaG)
