@@ -178,38 +178,58 @@ def antoine_water_psat(T_celsius: float) -> float:
     return (10.0 ** log_p_mmhg) * 133.322
 
 
+HENRY_CONSTANTS_40C = {
+    "H2": 7.82e9, "N2": 9.69e9, "CO": 6.28e9, "CH4": 4.62e9,
+    "CO2": 2.45e8, "CH3CHO": 7.60e5, "CH3COOH": 5.07e4,
+}
+
+
 class WaterSeparator:
-    def __init__(self, name, inlet, gas_outlet, water_outlet, T_celsius, P_pascal):
+    def __init__(self, name, inlet, gas_outlet, water_outlet, T_celsius, P_pascal,
+                 henry_constants=None):
         self.name = name
         self.inlet = inlet
         self.gas_outlet = gas_outlet
         self.water_outlet = water_outlet
         self.T_celsius = T_celsius
         self.P_pascal = P_pascal
+        self.henry = henry_constants or HENRY_CONSTANTS_40C
 
     def residuals(self) -> np.ndarray:
         inlet_flows = _get_flows_by_formula(self.inlet)
         gas_formulas = [c.formula for c in self.gas_outlet.components]
+        water_formulas = [c.formula for c in self.water_outlet.components]
         p_sat = antoine_water_psat(self.T_celsius)
         y_sat = p_sat / self.P_pascal
+        P = self.P_pascal
         res = []
-        non_water_total = 0.0
-        for i, f in enumerate(gas_formulas):
-            if f != "H2O":
-                expected = inlet_flows.get(f, 0.0)
-                res.append(self.gas_outlet.molar_flows[i] - expected)
-                non_water_total += expected
-        h2o_in_gas = y_sat / (1.0 - y_sat) * non_water_total
-        h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
-        if h2o_idx is not None:
-            res.append(self.gas_outlet.molar_flows[h2o_idx] - h2o_in_gas)
-        h2o_total = inlet_flows.get("H2O", 0.0)
-        water_removed = h2o_total - h2o_in_gas
-        for i, c in enumerate(self.water_outlet.components):
-            if c.formula == "H2O":
-                res.append(self.water_outlet.molar_flows[i] - water_removed)
-            else:
-                res.append(self.water_outlet.molar_flows[i] - 0.0)
+        # 物質収支
+        for j, f in enumerate(water_formulas):
+            gas_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_j = self.gas_outlet.molar_flows[gas_idx] if gas_idx is not None else 0.0
+            water_j = self.water_outlet.molar_flows[j]
+            res.append(gas_j + water_j - inlet_flows.get(f, 0.0))
+        # Antoine
+        gas_h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
+        gas_h2o = self.gas_outlet.molar_flows[gas_h2o_idx] if gas_h2o_idx is not None else 0.0
+        non_h2o_gas = sum(self.gas_outlet.molar_flows[i] for i, f in enumerate(gas_formulas) if f != "H2O")
+        res.append(gas_h2o - y_sat / (1.0 - y_sat) * non_h2o_gas)
+        # Henry
+        water_h2o_idx = water_formulas.index("H2O") if "H2O" in water_formulas else None
+        n_water_liq = self.water_outlet.molar_flows[water_h2o_idx] if water_h2o_idx is not None else 0.0
+        total_gas = sum(self.gas_outlet.molar_flows[i] for i, _ in enumerate(gas_formulas))
+        for j, f in enumerate(water_formulas):
+            if f == "H2O":
+                continue
+            if f not in self.henry:
+                res.append(self.water_outlet.molar_flows[j])
+                continue
+            H_i = self.henry[f]
+            gas_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_i = self.gas_outlet.molar_flows[gas_idx] if gas_idx is not None else 0.0
+            water_i = self.water_outlet.molar_flows[j]
+            scale = max(H_i, 1.0)
+            res.append((water_i * total_gas * H_i - gas_i * P * n_water_liq) / scale)
         return np.array(res)
 
 
@@ -523,8 +543,8 @@ class StreamExpression:
     def multi_react(self, reactions, key, conversion, selectivities):
         return self._ensure_materialized().multi_react(reactions, key, conversion, selectivities)
 
-    def separate_water(self, T, P, **kwargs):
-        return self._ensure_materialized().separate_water(T, P, **kwargs)
+    def separate_water(self, *args, **kwargs):
+        return self._ensure_materialized().separate_water(*args, **kwargs)
 
     def __add__(self, other):
         return self._ensure_materialized().__add__(other)
@@ -870,16 +890,17 @@ class Stream:
         ))
         return outlet
 
-    def separate_water(self, T, P, name_gas=None, name_water=None):
+    def separate_water(self, T, P, name_gas=None, name_water=None, henry_constants=None):
         P_pascal = parse_pressure(P)
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
         gas_outlet = Stream(components=gas_formulas, name=name_gas)
-        water_outlet = Stream(components=["H2O"], name=name_water)
+        water_outlet = Stream(components=gas_formulas, name=name_water)
         _get_flowsheet().add_unit(WaterSeparator(
             "SEP_auto", inlet=self, gas_outlet=gas_outlet,
             water_outlet=water_outlet, T_celsius=T, P_pascal=P_pascal,
+            henry_constants=henry_constants,
         ))
         return gas_outlet, water_outlet
 

@@ -155,65 +155,103 @@ def antoine_water_psat(T_celsius: float) -> float:
     return p_mmhg * 133.322  # mmHg → Pa
 
 
-class WaterSeparator:
-    """Antoine式に基づく水分離器。
+# Henry則定数 [Pa] at 40°C
+# H_i: 気体iの水への溶解に関する Henry 定数
+# x_i = P_i / H_i (x_i: 液中モル分率, P_i: 気相分圧)
+# 値が大きい = 溶けにくい, 値が小さい = 溶けやすい
+HENRY_CONSTANTS_40C: dict[str, float] = {
+    "H2":      7.82e9,    # 非常に溶けにくい
+    "N2":      9.69e9,    # 非常に溶けにくい
+    "CO":      6.28e9,    # 非常に溶けにくい
+    "CH4":     4.62e9,    # 溶けにくい
+    "CO2":     2.45e8,    # やや溶ける
+    "CH3CHO":  7.60e5,    # よく溶ける (アセトアルデヒド)
+    "CH3COOH": 5.07e4,    # 極めてよく溶ける (酢酸)
+}
 
-    40°C, 3MPaG 等の条件で、ガス中の水を飽和蒸気圧まで除去する。
-    非水成分は全てガス側へ通過。
-    水はガス中に飽和分だけ残り、残りは液水として除去。
+
+class WaterSeparator:
+    """Antoine式 + Henry則に基づく水分離器。
+
+    条件（例: 40°C, 3MPaG）で気液分離を行う。
+    - 水蒸気: Antoine式で飽和蒸気圧を計算し、ガス中に残る量を決定
+    - 気体溶解: Henry則で各ガス成分の液水への溶解量を計算
 
     Parameters
     ----------
     inlet : Stream
     gas_outlet : Stream
-        ガス出口（全成分、H2O は飽和量）
+        ガス出口（全成分）
     water_outlet : Stream
-        液水出口（H2O のみ）
+        液水出口（H2O + 溶解成分）
     T_celsius : float
     P_pascal : float
         絶対圧 [Pa]
+    henry_constants : dict[str, float] | None
+        Henry 定数の上書き [Pa]。None の場合は 40°C のデフォルト値を使用。
     """
 
-    def __init__(self, name, inlet, gas_outlet, water_outlet, T_celsius, P_pascal):
+    def __init__(self, name, inlet, gas_outlet, water_outlet, T_celsius, P_pascal,
+                 henry_constants=None):
         self.name = name
         self.inlet = inlet
         self.gas_outlet = gas_outlet
         self.water_outlet = water_outlet
         self.T_celsius = T_celsius
         self.P_pascal = P_pascal
+        self.henry = henry_constants or HENRY_CONSTANTS_40C
 
     def residuals(self) -> np.ndarray:
         inlet_flows = _get_flows_by_formula(self.inlet)
         gas_formulas = [c.formula for c in self.gas_outlet.components]
+        water_formulas = [c.formula for c in self.water_outlet.components]
 
         p_sat = antoine_water_psat(self.T_celsius)
-        y_sat = p_sat / self.P_pascal  # 飽和モル分率
+        y_sat = p_sat / self.P_pascal
+        P = self.P_pascal
 
         res = []
 
-        # 非水成分: ガス側へ全量通過
-        non_water_total = 0.0
-        for i, f in enumerate(gas_formulas):
-            if f != "H2O":
-                expected = inlet_flows.get(f, 0.0)
-                res.append(self.gas_outlet.molar_flows[i] - expected)
-                non_water_total += expected
+        # --- 物質収支（各成分）: inlet_i = gas_i + water_i ---
+        for j, f in enumerate(water_formulas):
+            gas_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_j = self.gas_outlet.molar_flows[gas_idx] if gas_idx is not None else 0.0
+            water_j = self.water_outlet.molar_flows[j]
+            inlet_j = inlet_flows.get(f, 0.0)
+            res.append(gas_j + water_j - inlet_j)
 
-        # H2O in gas: y_sat = n_H2O / (n_H2O + n_other)
-        # → n_H2O = y_sat / (1 - y_sat) * n_other
-        h2o_in_gas = y_sat / (1.0 - y_sat) * non_water_total
-        h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
-        if h2o_idx is not None:
-            res.append(self.gas_outlet.molar_flows[h2o_idx] - h2o_in_gas)
+        # --- 水蒸気: Antoine式 ---
+        # gas_H2O = y_sat / (1 - y_sat) * sum(non_H2O_gas)
+        gas_h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
+        gas_h2o = self.gas_outlet.molar_flows[gas_h2o_idx] if gas_h2o_idx is not None else 0.0
+        non_h2o_gas = sum(
+            self.gas_outlet.molar_flows[i]
+            for i, f in enumerate(gas_formulas) if f != "H2O"
+        )
+        res.append(gas_h2o - y_sat / (1.0 - y_sat) * non_h2o_gas)
 
-        # 液水: inlet_H2O - gas_H2O
-        h2o_total = inlet_flows.get("H2O", 0.0)
-        water_removed = h2o_total - h2o_in_gas
-        # water_outlet は H2O のみ
-        for i, c in enumerate(self.water_outlet.components):
-            if c.formula == "H2O":
-                res.append(self.water_outlet.molar_flows[i] - water_removed)
-            else:
-                res.append(self.water_outlet.molar_flows[i] - 0.0)
+        # --- Henry則: 溶解平衡 ---
+        # water_i / n_water_liq = (gas_i / total_gas) * P / H_i
+        # → water_i * total_gas * H_i = gas_i * P * n_water_liq
+        # （除算を避けて乗算形式で残差を構成）
+        water_h2o_idx = water_formulas.index("H2O") if "H2O" in water_formulas else None
+        n_water_liq = self.water_outlet.molar_flows[water_h2o_idx] if water_h2o_idx is not None else 0.0
+        total_gas = sum(self.gas_outlet.molar_flows[i] for i, _ in enumerate(gas_formulas))
+
+        for j, f in enumerate(water_formulas):
+            if f == "H2O":
+                continue
+            if f not in self.henry:
+                # Henry定数なし: 液相への溶解なし
+                res.append(self.water_outlet.molar_flows[j])
+                continue
+            H_i = self.henry[f]
+            gas_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_i = self.gas_outlet.molar_flows[gas_idx] if gas_idx is not None else 0.0
+            water_i = self.water_outlet.molar_flows[j]
+            # 乗算形式: water_i * total_gas * H_i - gas_i * P * n_water_liq = 0
+            # スケーリング: H_i が大きいので正規化
+            scale = max(H_i, 1.0)
+            res.append((water_i * total_gas * H_i - gas_i * P * n_water_liq) / scale)
 
         return np.array(res)

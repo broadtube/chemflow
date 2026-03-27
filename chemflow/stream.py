@@ -438,8 +438,9 @@ class Stream:
         P: float | str,
         name_gas: str | None = None,
         name_water: str | None = None,
+        henry_constants: dict[str, float] | None = None,
     ) -> tuple[Stream, Stream]:
-        """Antoine式に基づく水分離。
+        """Antoine式 + Henry則に基づく水分離。
 
         Parameters
         ----------
@@ -447,6 +448,8 @@ class Stream:
             温度 [°C]
         P : float or str
             圧力 [Pa] or 文字列 ("3MPaG" 等)
+        henry_constants : dict[str, float] | None
+            Henry 定数の上書き [Pa]。None で 40°C デフォルト値を使用。
 
         Returns
         -------
@@ -464,8 +467,8 @@ class Stream:
             gas_formulas.append("H2O")
         gas_outlet = Stream(components=gas_formulas, name=name_gas)
 
-        # 液水出口: H2O のみ
-        water_outlet = Stream(components=["H2O"], name=name_water)
+        # 液水出口: 全成分（溶解ガスを含む）
+        water_outlet = Stream(components=gas_formulas, name=name_water)
 
         sep = WaterSeparator(
             "SEP_auto",
@@ -474,6 +477,7 @@ class Stream:
             water_outlet=water_outlet,
             T_celsius=T,
             P_pascal=P_pascal,
+            henry_constants=henry_constants,
         )
         _get_flowsheet().add_unit(sep)
         return gas_outlet, water_outlet
