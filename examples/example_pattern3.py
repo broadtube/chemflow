@@ -10,7 +10,7 @@
   ガスは一部パージ、残り循環
 """
 
-from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, export_csv
+from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, export_csv, export_excel
 
 reset()
 
@@ -72,6 +72,13 @@ print("=" * 60)
 print_streams()
 export_csv("pattern3_result.csv")
 print("\nCSV出力: pattern3_result.csv")
+
+# Excel出力（Excelでoutput.xlsxを開いている場合）
+try:
+    export_excel("output.xlsx", "Sheet1", "A1")
+    print("Excel出力: output.xlsx / Sheet1 / A1")
+except Exception as e:
+    print(f"Excel出力スキップ: {e}")
 
 print("\n--- 制約検証 ---")
 print(f"C3 total mol:     {C3.total_molar_flow:.4f} (target: 30)")
