@@ -3,7 +3,7 @@
 CO2 75NL/h + RG(H2:20NL/h, CH4:48NL/h) + H2O 62NL/h を混合し、
 850°C / 1.04MPaG で Gibbs 平衡計算を行う。
 平衡種: CO2, CH4, H2O, CO, H2
-その後 30°C まで冷却し、気液平衡で凝縮水を抜き出す。
+その後 25°C まで冷却し、気液平衡で凝縮水を抜き出す。
 """
 
 from chemflow import Stream, solve, reset, print_streams, set_component_order, export_csv, export_excel
@@ -26,15 +26,15 @@ E.T_celsius = 850
 E.P_input = "1.04MPaG"
 E.phase = "Gas"
 
-# 30°C まで冷却 → 気液平衡で凝縮水を抜き出す
+# 25°C まで冷却 → 気液平衡で凝縮水を抜き出す
 Gas, Condensate = E.separate_water(
-    T=30, P="1.04MPaG",
+    T=25, P="1.04MPaG",
     name_gas="DryGas", name_water="Condensate",
 )
-Gas.T_celsius = 30
+Gas.T_celsius = 25
 Gas.P_input = "1.04MPaG"
 Gas.phase = "Gas"
-Condensate.T_celsius = 30
+Condensate.T_celsius = 25
 Condensate.P_input = "1.04MPaG"
 Condensate.phase = "Liquid"
 
