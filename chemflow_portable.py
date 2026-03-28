@@ -1206,8 +1206,9 @@ class Stream:
             if f not in outlet_formulas:
                 outlet_formulas.append(f)
         outlet = Stream(components=outlet_formulas, _internal=True)
-        for f in outlet_formulas:
-            self._add_component(f)
+        if not self._fixed:
+            for f in outlet_formulas:
+                self._add_component(f)
         stoich_array = np.zeros(len(outlet_formulas))
         for f, coeff in stoichiometry.items():
             stoich_array[outlet_formulas.index(f)] = coeff
@@ -1221,8 +1222,9 @@ class Stream:
     def gibbs_react(self, T: float, P: float | str, species: list[str]) -> Stream:
         P_pascal = parse_pressure(P)
         outlet = Stream(components=list(species), _internal=True)
-        for f in species:
-            self._add_component(f)
+        if not self._fixed:
+            for f in species:
+                self._add_component(f)
         _get_flowsheet().add_unit(GibbsReactor(
             inlet=self, outlet=outlet,
             T_celsius=T, P_pascal=P_pascal, species=species,
@@ -1236,8 +1238,9 @@ class Stream:
                 if f not in outlet_formulas:
                     outlet_formulas.append(f)
         outlet = Stream(components=outlet_formulas, _internal=True)
-        for f in outlet_formulas:
-            self._add_component(f)
+        if not self._fixed:
+            for f in outlet_formulas:
+                self._add_component(f)
         _get_flowsheet().add_unit(MultiReactor(
             "MRX_auto", inlet=self, outlet=outlet,
             reactions=reactions, key=key,

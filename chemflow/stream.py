@@ -399,9 +399,10 @@ class Stream:
 
         outlet = Stream(components=outlet_formulas, _internal=True)
 
-        # 入口にも不足成分を追加（次元を揃える）
-        for formula in outlet_formulas:
-            self._add_component(formula)
+        # 入口にも不足成分を追加（固定ストリームはスキップ）
+        if not self._fixed:
+            for formula in outlet_formulas:
+                self._add_component(formula)
 
         # 化学量論係数を配列に変換
         stoich_array = np.zeros(len(outlet_formulas))
@@ -439,9 +440,11 @@ class Stream:
         outlet_formulas = list(species)
         outlet = Stream(components=outlet_formulas, _internal=True)
 
-        # 入口にも不足成分を追加
-        for formula in outlet_formulas:
-            self._add_component(formula)
+        # 入口にも不足成分を追加（固定ストリームはスキップ — GibbsReactorは
+        # formula マッピングで inlet に存在しない成分を 0 として扱える）
+        if not self._fixed:
+            for formula in outlet_formulas:
+                self._add_component(formula)
 
         gibbs = GibbsReactor(
             inlet=self,
@@ -486,8 +489,9 @@ class Stream:
 
         outlet = Stream(components=outlet_formulas, _internal=True)
 
-        for formula in outlet_formulas:
-            self._add_component(formula)
+        if not self._fixed:
+            for formula in outlet_formulas:
+                self._add_component(formula)
 
         reactor = MultiReactor(
             "MRX_auto",
