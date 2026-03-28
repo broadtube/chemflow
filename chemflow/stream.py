@@ -40,6 +40,7 @@ class Stream:
         *,
         basis: str = "mol",
         total: float | None = None,
+        total_basis: str | None = None,
         components: list[str] | None = None,
         composition: Stream | None = None,
         name: str | None = None,
@@ -76,10 +77,11 @@ class Stream:
             return
 
         # flows dict あり
-        self._init_from_flows(flows, basis, total)
+        self._init_from_flows(flows, basis, total, total_basis)
         self._auto_register()
 
-    def _init_from_flows(self, flows: dict, basis: str, total: float | None):
+    def _init_from_flows(self, flows: dict, basis: str, total: float | None,
+                         total_basis: str | None = None):
         """flows dict からモル流量を初期化する。"""
         # タプル形式チェック: {"N2": (20, "mol"), "H2": (120, "mass")}
         first_val = next(iter(flows.values()))
@@ -105,7 +107,7 @@ class Stream:
         elif basis in frac_bases:
             if total is not None:
                 self.molar_flows = self._convert_frac_to_mol(
-                    values, basis, total, mws, nvols
+                    values, basis, total, total_basis, mws, nvols
                 )
                 self._fixed = True
             else:
@@ -150,20 +152,61 @@ class Stream:
         raise BasisError(f"Unknown absolute basis: '{basis}'")
 
     @staticmethod
-    def _convert_frac_to_mol(fracs, basis, total, mws, nvols):
-        if basis == "mole_frac":
-            return fracs * total
-        elif basis == "mass_frac":
-            # total = total mass flow
-            # mass_i = fracs_i * total
-            # mol_i = mass_i / mw_i
-            return (fracs * total) / mws
-        elif basis == "volume_frac":
-            # total = total normal volume flow
-            # vol_i = fracs_i * total
-            # mol_i = vol_i / nvol_i
-            return (fracs * total) / nvols
-        raise BasisError(f"Unknown fraction basis: '{basis}'")
+    def _convert_frac_to_mol(fracs, basis, total, total_basis, mws, nvols):
+        """比率 + total から各成分のモル流量を計算する。
+
+        total_basis が None の場合は basis に連動:
+          mole_frac → mol, mass_frac → mass, volume_frac → normal_volume
+        total_basis を明示指定すると basis と独立に total の単位を指定できる:
+          例: basis="mole_frac", total=1000, total_basis="mass" → モル比率で1000g/h
+        """
+        # fracs を正規化
+        fracs_norm = fracs / fracs.sum()
+
+        # total_basis のデフォルト
+        if total_basis is None:
+            default_map = {"mole_frac": "mol", "mass_frac": "mass", "volume_frac": "normal_volume"}
+            total_basis = default_map.get(basis, "mol")
+
+        if total_basis == "mol":
+            # total = total mol/h
+            return fracs_norm * total
+        elif total_basis == "mass":
+            # total = total g/h
+            # まずモル比率からモル流量（仮）を求め、平均分子量を計算
+            if basis == "mole_frac":
+                avg_mw = np.sum(fracs_norm * mws)
+                total_mol = total / avg_mw
+                return fracs_norm * total_mol
+            elif basis == "mass_frac":
+                return (fracs_norm * total) / mws
+            elif basis == "volume_frac":
+                # vol比率 → mol比率に変換してから
+                mol_ratios = fracs_norm / nvols
+                mol_ratios = mol_ratios / mol_ratios.sum()
+                avg_mw = np.sum(mol_ratios * mws)
+                total_mol = total / avg_mw
+                return mol_ratios * total_mol
+        elif total_basis == "normal_volume":
+            # total = total NL/h
+            if basis == "volume_frac":
+                return (fracs_norm * total) / nvols
+            elif basis == "mole_frac":
+                # mol比率 → vol比率に変換
+                vol_ratios = fracs_norm * nvols
+                vol_ratios = vol_ratios / vol_ratios.sum()
+                total_vol_per_comp = vol_ratios * total
+                return total_vol_per_comp / nvols
+            elif basis == "mass_frac":
+                # mass比率 → mol比率
+                mol_ratios = fracs_norm / mws
+                mol_ratios = mol_ratios / mol_ratios.sum()
+                vol_ratios = mol_ratios * nvols
+                vol_ratios = vol_ratios / vol_ratios.sum()
+                total_vol_per_comp = vol_ratios * total
+                return total_vol_per_comp / nvols
+
+        raise BasisError(f"Unknown total_basis: '{total_basis}'")
 
     def _register_frac_constraint(self, fracs, basis):
         """比率系 basis で total なしの場合の組成制約。"""
