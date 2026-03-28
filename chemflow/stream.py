@@ -54,6 +54,7 @@ class Stream:
         self.phase = phase  # "Gas", "Liquid", "Solid", "Mixed"
         self._fixed = False
         self._composition_constraints: list = []
+        self._original_formulas: set[str] | None = None  # 初期成分リスト（動的追加の0拘束用）
 
         if composition is not None:
             # 他ストリームと同組成、total未知
@@ -67,6 +68,7 @@ class Stream:
 
         if components is not None and flows is None:
             # 未知ストリーム
+            self._original_formulas = set(components)
             self.components = ComponentRegistry.get_many(components)
             self.n_components = len(self.components)
             self.molar_flows = np.ones(self.n_components)  # 初期推定（非ゼロ）
@@ -280,14 +282,28 @@ class Stream:
             fs.add_stream(self)
 
     def _add_component(self, formula: str):
-        """成分を動的に追加する（固定ストリームは0、未知は小さい初期推定値）。"""
+        """成分を動的に追加する。
+
+        固定ストリーム: 0で追加。
+        未知ストリーム（_original_formulasあり）: 元の成分リストにない成分は0拘束を自動登録。
+        未知ストリーム（_original_formulasなし）: 初期推定値0.1で追加（変数として扱う）。
+        """
         existing = {c.formula for c in self.components}
         if formula in existing:
             return
         comp = ComponentRegistry.get(formula)
         self.components.append(comp)
         self.n_components = len(self.components)
-        self.molar_flows = np.append(self.molar_flows, 0.0 if self._fixed else 0.1)
+
+        if self._fixed:
+            self.molar_flows = np.append(self.molar_flows, 0.0)
+        elif self._original_formulas is not None and formula not in self._original_formulas:
+            # 元の成分リストにない → 0拘束
+            self.molar_flows = np.append(self.molar_flows, 0.0)
+            idx = self.n_components - 1
+            self._composition_constraints.append(lambda i=idx: np.array([self.molar_flows[i]]))
+        else:
+            self.molar_flows = np.append(self.molar_flows, 0.1)
 
     # --- プロパティ ---
 

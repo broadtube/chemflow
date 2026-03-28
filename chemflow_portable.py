@@ -968,6 +968,7 @@ class Stream:
         self.phase = phase
         self._fixed = False
         self._composition_constraints: list = []
+        self._original_formulas: set[str] | None = None
 
         if composition is not None:
             self.components = list(composition.components)
@@ -978,6 +979,7 @@ class Stream:
             return
 
         if components is not None and flows is None:
+            self._original_formulas = set(components)
             self.components = ComponentRegistry.get_many(components)
             self.n_components = len(self.components)
             self.molar_flows = np.ones(self.n_components)
@@ -1131,7 +1133,14 @@ class Stream:
             return
         self.components.append(ComponentRegistry.get(formula))
         self.n_components = len(self.components)
-        self.molar_flows = np.append(self.molar_flows, 0.0 if self._fixed else 0.1)
+        if self._fixed:
+            self.molar_flows = np.append(self.molar_flows, 0.0)
+        elif self._original_formulas is not None and formula not in self._original_formulas:
+            self.molar_flows = np.append(self.molar_flows, 0.0)
+            idx = self.n_components - 1
+            self._composition_constraints.append(lambda i=idx: np.array([self.molar_flows[i]]))
+        else:
+            self.molar_flows = np.append(self.molar_flows, 0.1)
 
     # --- Properties ---
     @property
