@@ -1,6 +1,6 @@
 """パターン1: 3ストリーム混合 → Gibbsリアクター → 水凝縮
 
-CO2 5mol/h + CH4 5mol/h + H2O 5mol/h を混合し、
+CO2 75NL/h + RG(H2:20NL/h, CH4:48NL/h) + H2O 62NL/h を混合し、
 850°C / 1.04MPaG で Gibbs 平衡計算を行う。
 平衡種: CO2, CH4, H2O, CO, H2
 その後 30°C まで冷却し、気液平衡で凝縮水を抜き出す。
@@ -10,9 +10,9 @@ from chemflow import Stream, solve, reset, print_streams, set_component_order, e
 
 reset()
 
-A = Stream({"CO2": 5}, name="CO2_feed", T=25, P="1.04MPaG", phase="Gas")
-B = Stream({"CH4": 5}, name="CH4_feed", T=25, P="1.04MPaG", phase="Gas")
-C = Stream({"H2O": 5}, name="H2O_feed", T=25, P="1.04MPaG", phase="Gas")
+A = Stream({"CO2": 75}, basis="normal_volume", name="CO2_feed", T=25, P="1.04MPaG", phase="Gas")
+B = Stream({"H2": 20, "CH4": 48}, basis="normal_volume", name="RG_feed", T=25, P="1.04MPaG", phase="Gas")
+C = Stream({"H2O": 62}, basis="normal_volume", name="H2O_feed", T=25, P="1.04MPaG", phase="Gas")
 
 D = A + B + C
 D.name = "Mixed"
@@ -57,9 +57,12 @@ except Exception as e:
 
 # 元素保存の検証
 print("\n--- 元素保存検証 ---")
-inlet_C = 5 + 5
-inlet_H = 5 * 4 + 5 * 2
-inlet_O = 5 * 2 + 5
+a = {c.formula: A.molar_flows[i] for i, c in enumerate(A.components)}
+b = {c.formula: B.molar_flows[i] for i, c in enumerate(B.components)}
+c = {c.formula: C.molar_flows[i] for i, c in enumerate(C.components)}
+inlet_C = a.get("CO2", 0) + b.get("CH4", 0)
+inlet_H = b.get("CH4", 0) * 4 + b.get("H2", 0) * 2 + c.get("H2O", 0) * 2
+inlet_O = a.get("CO2", 0) * 2 + c.get("H2O", 0)
 
 g = {c.formula: Gas.molar_flows[i] for i, c in enumerate(Gas.components)}
 w = {c.formula: Condensate.molar_flows[i] for i, c in enumerate(Condensate.components)}
