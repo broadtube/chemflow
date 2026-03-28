@@ -179,24 +179,33 @@ class Flowsheet:
         ]
 
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
-            print(f"[{sec_name}]")
-            h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
+            # ストリーム名行
+            h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
             for nm in names:
                 h1 += f"  {nm:^{stream_w}s}"
             print(h1)
+            # 単位行
             h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
             for _ in names:
                 h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
             print(h2)
+            # Component / MW 見出し行
+            h3 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
+            for _ in names:
+                h3 += f"  {'':>{abs_w}s} {'':>{rel_w}s}"
+            print(h3)
+            # 区切り線
             sep = f"{'':>{fw}s}  {'-' * mw_w}"
             for _ in names:
                 sep += f"  {'-' * abs_w} {'-' * rel_w}"
             print(sep)
+            # 成分行
             for i, f in enumerate(all_formulas):
                 row = f"  {f:>{fw}s}  {mw_map[f]:{mw_w}.2f}"
                 for d in data:
                     row += f"  {d[abs_key][i]:{abs_w}.4f} {d[rel_key][i]:{rel_w}.4f}"
                 print(row)
+            # Total行
             row = f"  {'Total':>{fw}s}  {'':>{mw_w}s}"
             for d in data:
                 row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
@@ -229,11 +238,8 @@ class Flowsheet:
             w = csv_mod.writer(f)
 
             for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
-                # セクションヘッダー行
-                w.writerow([f"[{sec_name}]"])
-
                 # ストリーム名行
-                header = ["Component", "MW"]
+                header = ["", ""]
                 for nm in names:
                     header.extend([nm, ""])
                 w.writerow(header)
@@ -243,6 +249,9 @@ class Flowsheet:
                 for _ in names:
                     unit_row.extend([abs_unit, rel_unit])
                 w.writerow(unit_row)
+
+                # Component / MW 見出し行
+                w.writerow(["Component", "MW"])
 
                 # 成分行
                 for i, formula in enumerate(all_formulas):
@@ -334,13 +343,7 @@ class Flowsheet:
         r = row0  # 現在の行
 
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
-            # セクションヘッダー
-            ws.Cells(r, col0).Value = f"[{sec_name}]"
-            r += 1
-
             # ストリーム名行
-            ws.Cells(r, col0).Value = "Component"
-            ws.Cells(r, col0 + 1).Value = "MW"
             for si, nm in enumerate(names):
                 ws.Cells(r, col0 + 2 + si * 2).Value = nm
             r += 1
@@ -349,6 +352,11 @@ class Flowsheet:
             for si in range(len(names)):
                 ws.Cells(r, col0 + 2 + si * 2).Value = abs_unit
                 ws.Cells(r, col0 + 3 + si * 2).Value = rel_unit
+            r += 1
+
+            # Component / MW 見出し行
+            ws.Cells(r, col0).Value = "Component"
+            ws.Cells(r, col0 + 1).Value = "MW"
             r += 1
 
             # 成分行

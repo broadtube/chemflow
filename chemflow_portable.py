@@ -557,13 +557,15 @@ class Flowsheet:
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
             ("weight","g/h","wt%","mass","mass_frac","total_mass"),
         ]:
-            print(f"[{sec_name}]")
-            h1 = f"{'':>{fw}s}  {'MW':>{mw_w}s}"
+            h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
             for nm in names: h1 += f"  {nm:^{stream_w}s}"
             print(h1)
             h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
             for _ in names: h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
             print(h2)
+            h3 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
+            for _ in names: h3 += f"  {'':>{abs_w}s} {'':>{rel_w}s}"
+            print(h3)
             sep = f"{'':>{fw}s}  {'-' * mw_w}"
             for _ in names: sep += f"  {'-' * abs_w} {'-' * rel_w}"
             print(sep)
@@ -589,13 +591,13 @@ class Flowsheet:
                 ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
                 ("weight","g/h","wt%","mass","mass_frac","total_mass"),
             ]:
-                w.writerow([f"[{sec_name}]"])
-                header = ["Component", "MW"]
+                header = ["", ""]
                 for nm in names: header.extend([nm, ""])
                 w.writerow(header)
                 unit_row = ["", ""]
                 for _ in names: unit_row.extend([abs_unit, rel_unit])
                 w.writerow(unit_row)
+                w.writerow(["Component", "MW"])
                 for i, formula in enumerate(all_formulas):
                     row = [formula, f"{mw_map[formula]:.2f}"]
                     for d in data: row.extend([f"{d[abs_key][i]:.4f}", f"{d[rel_key][i]:.4f}"])
@@ -645,16 +647,15 @@ class Flowsheet:
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
             ("weight","g/h","wt%","mass","mass_frac","total_mass"),
         ]:
-            ws.Cells(r, col0).Value = f"[{sec_name}]"
-            r += 1
-            ws.Cells(r, col0).Value = "Component"
-            ws.Cells(r, col0 + 1).Value = "MW"
             for si, nm in enumerate(names):
                 ws.Cells(r, col0 + 2 + si * 2).Value = nm
             r += 1
             for si in range(len(names)):
                 ws.Cells(r, col0 + 2 + si * 2).Value = abs_unit
                 ws.Cells(r, col0 + 3 + si * 2).Value = rel_unit
+            r += 1
+            ws.Cells(r, col0).Value = "Component"
+            ws.Cells(r, col0 + 1).Value = "MW"
             r += 1
             for i, formula in enumerate(all_formulas):
                 ws.Cells(r, col0).Value = formula
