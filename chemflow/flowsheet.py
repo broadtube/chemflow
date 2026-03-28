@@ -199,24 +199,26 @@ class Flowsheet:
             ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
-        def _header_row(label, values):
-            row = f"  {label:>{fw}s}  {'':>{mw_w}s}"
-            for v in values:
-                row += f"  {v:^{stream_w}s}"
+        def _header_row(label, values, stream_values=None):
+            """label: 1列目, values: 2列目がvalues[0]の場合はMW列に使用しそれ以降がストリーム列。
+            stream_values が指定された場合: values はMW列用、stream_values がストリーム列用。"""
+            if stream_values is not None:
+                row = f"  {label:>{fw}s}  {values[0]:>{mw_w}s}" if values else f"  {label:>{fw}s}  {'':>{mw_w}s}"
+                for v in stream_values:
+                    row += f"  {v:^{stream_w}s}"
+            else:
+                row = f"  {label:>{fw}s}  {'':>{mw_w}s}"
+                for v in values:
+                    row += f"  {v:^{stream_w}s}"
             return row
 
         first_section = True
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             if first_section:
-                # No. 行
                 print(_header_row("No.", [str(i+1) for i in range(len(names))]))
-                # ストリーム名行
-                print(_header_row("", names))
-                # 圧力行
-                print(_header_row("P [MPaG]", pressures))
-                # 温度行
-                print(_header_row("T [°C]", temperatures))
-                # フェーズ行
+                print(_header_row("Service", names))
+                print(_header_row("Press.", ["MPaG"], pressures))
+                print(_header_row("Temp.", ["°C"], temperatures))
                 print(_header_row("Phase", phases))
                 first_section = False
             # Component/MW + 単位行
@@ -264,8 +266,8 @@ class Flowsheet:
             ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
-        def _csv_header_row(label, values):
-            row = [label, ""]
+        def _csv_header_row(label, mw_val, values):
+            row = [label, mw_val]
             for v in values:
                 row.extend([v, ""])
             return row
@@ -274,11 +276,11 @@ class Flowsheet:
             w = csv_mod.writer(f)
 
             # ヘッダーブロック
-            w.writerow(_csv_header_row("No.", [str(i+1) for i in range(len(names))]))
-            w.writerow(_csv_header_row("", names))
-            w.writerow(_csv_header_row("P [MPaG]", pressures))
-            w.writerow(_csv_header_row("T [°C]", temperatures))
-            w.writerow(_csv_header_row("Phase", phases))
+            w.writerow(_csv_header_row("No.", "", [str(i+1) for i in range(len(names))]))
+            w.writerow(_csv_header_row("Service", "", names))
+            w.writerow(_csv_header_row("Press.", "MPaG", pressures))
+            w.writerow(_csv_header_row("Temp.", "°C", temperatures))
+            w.writerow(_csv_header_row("Phase", "", phases))
 
             for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
                 # Component/MW + 単位行
@@ -374,18 +376,20 @@ class Flowsheet:
 
         r = row0  # 現在の行
 
-        def _xl_header_row(label, values):
+        def _xl_header_row(label, mw_val, values):
             nonlocal r
             ws.Cells(r, col0).Value = label
+            if mw_val:
+                ws.Cells(r, col0 + 1).Value = mw_val
             for si, v in enumerate(values):
                 ws.Cells(r, col0 + 2 + si * 2).Value = v
             r += 1
 
-        _xl_header_row("No.", [str(i+1) for i in range(len(names))])
-        _xl_header_row("", names)
-        _xl_header_row("P [MPaG]", pressures)
-        _xl_header_row("T [°C]", temperatures)
-        _xl_header_row("Phase", phases)
+        _xl_header_row("No.", "", [str(i+1) for i in range(len(names))])
+        _xl_header_row("Service", "", names)
+        _xl_header_row("Press.", "MPaG", pressures)
+        _xl_header_row("Temp.", "°C", temperatures)
+        _xl_header_row("Phase", "", phases)
 
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             # Component/MW + 単位行

@@ -567,14 +567,14 @@ class Flowsheet:
         fw = max(max(len(f) for f in all_formulas), 9)
         mw_w, abs_w, rel_w = 8, 10, 8
         stream_w = abs_w + rel_w + 1
-        def _hr(label, values):
-            row = f"  {label:>{fw}s}  {'':>{mw_w}s}"
+        def _hr(label, values, mw_val=""):
+            row = f"  {label:>{fw}s}  {mw_val:>{mw_w}s}"
             for v in values: row += f"  {v:^{stream_w}s}"
             return row
         print(_hr("No.", [str(i+1) for i in range(len(names))]))
-        print(_hr("", names))
-        print(_hr("P [MPaG]", pressures))
-        print(_hr("T [°C]", temperatures))
+        print(_hr("Service", names))
+        print(_hr("Press.", pressures, "MPaG"))
+        print(_hr("Temp.", temperatures, "°C"))
         print(_hr("Phase", phases))
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
@@ -602,17 +602,17 @@ class Flowsheet:
             return
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
         pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
-        def _cr(label, values):
-            row = [label, ""]
+        def _cr(label, mw_val, values):
+            row = [label, mw_val]
             for v in values: row.extend([v, ""])
             return row
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv_mod.writer(f)
-            w.writerow(_cr("No.", [str(i+1) for i in range(len(names))]))
-            w.writerow(_cr("", names))
-            w.writerow(_cr("P [MPaG]", pressures))
-            w.writerow(_cr("T [°C]", temperatures))
-            w.writerow(_cr("Phase", phases))
+            w.writerow(_cr("No.", "", [str(i+1) for i in range(len(names))]))
+            w.writerow(_cr("Service", "", names))
+            w.writerow(_cr("Press.", "MPaG", pressures))
+            w.writerow(_cr("Temp.", "°C", temperatures))
+            w.writerow(_cr("Phase", "", phases))
             for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
                 ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
                 ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
@@ -666,17 +666,19 @@ class Flowsheet:
         start = ws.Range(cell)
         row0, col0 = start.Row, start.Column
         r = row0
-        def _xr(label, values):
+        def _xr(label, mw_val, values):
             nonlocal r
             ws.Cells(r, col0).Value = label
+            if mw_val:
+                ws.Cells(r, col0 + 1).Value = mw_val
             for si, v in enumerate(values):
                 ws.Cells(r, col0 + 2 + si * 2).Value = v
             r += 1
-        _xr("No.", [str(i+1) for i in range(len(names))])
-        _xr("", names)
-        _xr("P [MPaG]", pressures)
-        _xr("T [°C]", temperatures)
-        _xr("Phase", phases)
+        _xr("No.", "", [str(i+1) for i in range(len(names))])
+        _xr("Service", "", names)
+        _xr("Press.", "MPaG", pressures)
+        _xr("Temp.", "°C", temperatures)
+        _xr("Phase", "", phases)
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
