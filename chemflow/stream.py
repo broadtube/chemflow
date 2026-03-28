@@ -531,6 +531,67 @@ class Stream:
         _get_flowsheet().add_unit(sep)
         return gas_outlet, water_outlet
 
+    def absorb(
+        self,
+        water_flow: float,
+        T: float,
+        P: float | str,
+        stages: int = 10,
+        name_gas: str | None = None,
+        name_liquid: str | None = None,
+        henry_constants: dict[str, float] | None = None,
+    ) -> tuple[Stream, Stream]:
+        """多段吸収塔 (Kremser式)。
+
+        Parameters
+        ----------
+        water_flow : float
+            吸収水の流量 [mol/h]
+        T : float
+            温度 [°C]
+        P : float or str
+            圧力 [Pa] or 文字列 ("3MPaG" 等)
+        stages : int
+            理論段数 (デフォルト: 10)
+
+        Returns
+        -------
+        (gas_outlet, liquid_outlet)
+        """
+        from chemflow.global_flowsheet import _get_flowsheet
+        from chemflow.gibbs import parse_pressure
+        from chemflow.units import Absorber
+
+        P_pascal = parse_pressure(P)
+
+        # ガス入口の全成分 + H2O
+        gas_formulas = [c.formula for c in self.components]
+        if "H2O" not in gas_formulas:
+            gas_formulas.append("H2O")
+
+        # 水入口ストリーム（内部生成、固定）
+        water_inlet = Stream({"H2O": water_flow}, name=None)
+
+        # ガス出口
+        gas_outlet = Stream(components=gas_formulas, name=name_gas)
+
+        # 液出口（全成分）
+        liquid_outlet = Stream(components=gas_formulas, name=name_liquid)
+
+        absorber = Absorber(
+            "ABS_auto",
+            gas_inlet=self,
+            water_inlet=water_inlet,
+            gas_outlet=gas_outlet,
+            liquid_outlet=liquid_outlet,
+            T_celsius=T,
+            P_pascal=P_pascal,
+            stages=stages,
+            henry_constants=henry_constants,
+        )
+        _get_flowsheet().add_unit(absorber)
+        return gas_outlet, liquid_outlet
+
     # --- CSV ---
 
     @classmethod

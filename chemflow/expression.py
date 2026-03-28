@@ -41,8 +41,11 @@ class StreamExpression:
     def multi_react(self, reactions, key, conversion, selectivities):
         return self._ensure_materialized().multi_react(reactions, key, conversion, selectivities)
 
-    def separate_water(self, T, P, **kwargs):
-        return self._ensure_materialized().separate_water(T, P, **kwargs)
+    def separate_water(self, *args, **kwargs):
+        return self._ensure_materialized().separate_water(*args, **kwargs)
+
+    def absorb(self, *args, **kwargs):
+        return self._ensure_materialized().absorb(*args, **kwargs)
 
     def __add__(self, other):
         stream = self._ensure_materialized()

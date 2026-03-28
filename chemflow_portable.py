@@ -362,6 +362,73 @@ class WaterSeparator:
         return np.array(res)
 
 
+def _kremser_absorption_fraction(A, N):
+    if abs(A - 1.0) < 1e-10:
+        return N / (N + 1.0)
+    AN1 = A ** (N + 1)
+    return (AN1 - A) / (AN1 - 1.0)
+
+
+class Absorber:
+    def __init__(self, name, gas_inlet, water_inlet, gas_outlet, liquid_outlet,
+                 T_celsius, P_pascal, stages, henry_constants=None):
+        self.name = name
+        self.gas_inlet = gas_inlet
+        self.water_inlet = water_inlet
+        self.gas_outlet = gas_outlet
+        self.liquid_outlet = liquid_outlet
+        self.T_celsius = T_celsius
+        self.P_pascal = P_pascal
+        self.stages = stages
+        if henry_constants is not None:
+            self.henry = henry_constants
+        else:
+            all_formulas = set()
+            for s in [gas_inlet, water_inlet, gas_outlet, liquid_outlet]:
+                for c in s.components:
+                    all_formulas.add(c.formula)
+            self.henry = get_henry_constants(list(all_formulas), T_celsius)
+
+    def residuals(self) -> np.ndarray:
+        gas_in = _get_flows_by_formula(self.gas_inlet)
+        water_in = _get_flows_by_formula(self.water_inlet)
+        gas_formulas = [c.formula for c in self.gas_outlet.components]
+        liq_formulas = [c.formula for c in self.liquid_outlet.components]
+        P, N = self.P_pascal, self.stages
+        p_sat = antoine_water_psat(self.T_celsius)
+        y_sat = p_sat / P
+        total_gas_in = sum(gas_in.get(f, 0.0) for f in gas_formulas if f != "H2O")
+        L = water_in.get("H2O", 0.0)
+        V = total_gas_in
+        res = []
+        for j, f in enumerate(liq_formulas):
+            gas_out_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_out_j = self.gas_outlet.molar_flows[gas_out_idx] if gas_out_idx is not None else 0.0
+            liq_out_j = self.liquid_outlet.molar_flows[j]
+            feed_j = gas_in.get(f, 0.0) + water_in.get(f, 0.0)
+            res.append(gas_out_j + liq_out_j - feed_j)
+        gas_h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
+        gas_h2o = self.gas_outlet.molar_flows[gas_h2o_idx] if gas_h2o_idx is not None else 0.0
+        non_h2o_gas_out = sum(self.gas_outlet.molar_flows[i] for i, f in enumerate(gas_formulas) if f != "H2O")
+        res.append(gas_h2o - y_sat / (1.0 - y_sat) * non_h2o_gas_out)
+        for j, f in enumerate(liq_formulas):
+            if f == "H2O":
+                continue
+            if f not in self.henry:
+                res.append(self.liquid_outlet.molar_flows[j] - water_in.get(f, 0.0))
+                continue
+            H_i = self.henry[f]
+            K_i = H_i / P
+            safe_V = max(abs(V), 1e-10)
+            A_i = (L / safe_V) / K_i
+            frac = _kremser_absorption_fraction(A_i, N)
+            feed_gas_i = gas_in.get(f, 0.0)
+            absorbed = frac * feed_gas_i
+            expected_liq = water_in.get(f, 0.0) + absorbed
+            res.append(self.liquid_outlet.molar_flows[j] - expected_liq)
+        return np.array(res)
+
+
 # ============================================================
 # Gibbs Reactor (Cantera)
 # ============================================================
@@ -778,6 +845,9 @@ class StreamExpression:
     def separate_water(self, *args, **kwargs):
         return self._ensure_materialized().separate_water(*args, **kwargs)
 
+    def absorb(self, *args, **kwargs):
+        return self._ensure_materialized().absorb(*args, **kwargs)
+
     def __add__(self, other):
         return self._ensure_materialized().__add__(other)
 
@@ -1177,6 +1247,22 @@ class Stream:
             henry_constants=henry_constants,
         ))
         return gas_outlet, water_outlet
+
+    def absorb(self, water_flow, T, P, stages=10, name_gas=None, name_liquid=None, henry_constants=None):
+        P_pascal = parse_pressure(P)
+        gas_formulas = [c.formula for c in self.components]
+        if "H2O" not in gas_formulas:
+            gas_formulas.append("H2O")
+        water_inlet = Stream({"H2O": water_flow})
+        gas_outlet = Stream(components=gas_formulas, name=name_gas)
+        liquid_outlet = Stream(components=gas_formulas, name=name_liquid)
+        _get_flowsheet().add_unit(Absorber(
+            "ABS_auto", gas_inlet=self, water_inlet=water_inlet,
+            gas_outlet=gas_outlet, liquid_outlet=liquid_outlet,
+            T_celsius=T, P_pascal=P_pascal, stages=stages,
+            henry_constants=henry_constants,
+        ))
+        return gas_outlet, liquid_outlet
 
     @classmethod
     def from_csv(cls, path: str, name: str | None = None, **kwargs) -> Stream:

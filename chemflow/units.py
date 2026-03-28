@@ -251,3 +251,142 @@ class WaterSeparator:
             res.append(water_i - dissolved_expected)
 
         return np.array(res)
+
+
+def _kremser_absorption_fraction(A, N):
+    """Kremser式で N 段の吸収率を計算する。
+
+    Parameters
+    ----------
+    A : float
+        吸収係数 = (L/V) / K_i
+    N : int
+        理論段数
+
+    Returns
+    -------
+    float
+        吸収率 (0〜1)
+    """
+    if abs(A - 1.0) < 1e-10:
+        # A ≈ 1 の特殊ケース
+        return N / (N + 1.0)
+    AN1 = A ** (N + 1)
+    return (AN1 - A) / (AN1 - 1.0)
+
+
+class Absorber:
+    """多段吸収塔 (Kremser式)。
+
+    上から水（吸収液）、下からガスを供給し、多段気液平衡で分離する。
+    - ガス出口: 塔頂から排出（吸収されなかった成分）
+    - 液出口: 塔底から排出（水 + 吸収された成分）
+    - 水蒸気: Antoine式で飽和量をガス側に残す
+    - ガス溶解: Kremser式（Henry則 + 段数）で吸収率を計算
+
+    Parameters
+    ----------
+    name : str
+    gas_inlet : Stream
+        ガス入口（塔底）
+    water_inlet : Stream
+        水入口（塔頂）
+    gas_outlet : Stream
+        ガス出口（塔頂）
+    liquid_outlet : Stream
+        液出口（塔底、水 + 溶解成分）
+    T_celsius : float
+    P_pascal : float
+    stages : int
+        理論段数
+    henry_constants : dict[str, float] | None
+    """
+
+    def __init__(self, name, gas_inlet, water_inlet, gas_outlet, liquid_outlet,
+                 T_celsius, P_pascal, stages, henry_constants=None):
+        self.name = name
+        self.gas_inlet = gas_inlet
+        self.water_inlet = water_inlet
+        self.gas_outlet = gas_outlet
+        self.liquid_outlet = liquid_outlet
+        self.T_celsius = T_celsius
+        self.P_pascal = P_pascal
+        self.stages = stages
+
+        if henry_constants is not None:
+            self.henry = henry_constants
+        else:
+            from chemflow.henry import get_henry_constants
+            all_formulas = set()
+            for s in [gas_inlet, water_inlet, gas_outlet, liquid_outlet]:
+                for c in s.components:
+                    all_formulas.add(c.formula)
+            self.henry = get_henry_constants(list(all_formulas), T_celsius)
+
+    def residuals(self) -> np.ndarray:
+        gas_in = _get_flows_by_formula(self.gas_inlet)
+        water_in = _get_flows_by_formula(self.water_inlet)
+        gas_formulas = [c.formula for c in self.gas_outlet.components]
+        liq_formulas = [c.formula for c in self.liquid_outlet.components]
+        P = self.P_pascal
+        N = self.stages
+
+        p_sat = antoine_water_psat(self.T_celsius)
+        y_sat = p_sat / P
+
+        # 入口の合計
+        total_gas_in = sum(gas_in.get(f, 0.0) for f in gas_formulas if f != "H2O")
+        total_water_in = water_in.get("H2O", 0.0)
+
+        # L = 液のモル流量 (≈ 水の流量), V = ガスのモル流量
+        L = total_water_in
+        V = total_gas_in
+
+        res = []
+
+        # --- 全体の物質収支: gas_in + water_in = gas_out + liquid_out ---
+        for j, f in enumerate(liq_formulas):
+            gas_out_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_out_j = self.gas_outlet.molar_flows[gas_out_idx] if gas_out_idx is not None else 0.0
+            liq_out_j = self.liquid_outlet.molar_flows[j]
+            feed_j = gas_in.get(f, 0.0) + water_in.get(f, 0.0)
+            res.append(gas_out_j + liq_out_j - feed_j)
+
+        # --- 水蒸気: Antoine式 ---
+        gas_h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
+        gas_h2o = self.gas_outlet.molar_flows[gas_h2o_idx] if gas_h2o_idx is not None else 0.0
+        non_h2o_gas_out = sum(
+            self.gas_outlet.molar_flows[i]
+            for i, f in enumerate(gas_formulas) if f != "H2O"
+        )
+        res.append(gas_h2o - y_sat / (1.0 - y_sat) * non_h2o_gas_out)
+
+        # --- Kremser式: 各成分の吸収率 ---
+        for j, f in enumerate(liq_formulas):
+            if f == "H2O":
+                continue
+            if f not in self.henry:
+                # Henry定数なし: 吸収なし
+                res.append(self.liquid_outlet.molar_flows[j] - water_in.get(f, 0.0))
+                continue
+
+            H_i = self.henry[f]
+            K_i = H_i / P  # 気液平衡比
+            safe_V = max(abs(V), 1e-10)
+            A_i = (L / safe_V) / K_i  # 吸収係数
+
+            # Kremser式で吸収率を計算
+            frac = _kremser_absorption_fraction(A_i, N)
+
+            # ガス入口中の成分 i
+            feed_gas_i = gas_in.get(f, 0.0)
+
+            # 吸収量 = 吸収率 × ガス入口量
+            absorbed = frac * feed_gas_i
+
+            # 液出口 = 水入口中の成分 + 吸収量
+            expected_liq = water_in.get(f, 0.0) + absorbed
+            liq_out_j = self.liquid_outlet.molar_flows[j]
+            res.append(liq_out_j - expected_liq)
+
+        return np.array(res)

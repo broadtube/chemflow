@@ -47,18 +47,12 @@ D3.T_celsius = 280
 D3.P_input = "3MPaG"
 D3.phase = "Gas"
 
-# H2O 30mol/h を追加混合
-H2O_feed = Stream({"H2O": 30}, name="H2O_feed", T=25, phase="Liquid")
-D3_mixed = D3 + H2O_feed
-D3_mixed.name = "PreSep"
-D3_mixed.T_celsius = 40
-D3_mixed.P_input = "3MPaG"
-D3_mixed.phase = "Mixed"
-
-# 水分離 (40°C, 3MPaG)
-G3, Water_out = D3_mixed.separate_water(
+# 多段吸収塔 (40°C, 3MPaG, 10段, 水30mol/h)
+G3, Water_out = D3.absorb(
+    water_flow=30,
     T=40, P="3MPaG",
-    name_gas="Gas", name_water="WaterOut",
+    stages=10,
+    name_gas="Gas", name_liquid="WaterOut",
 )
 G3.T_celsius = 40
 G3.P_input = "3MPaG"
