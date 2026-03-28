@@ -793,6 +793,14 @@ class StreamExpression:
             raise AttributeError(name)
         return getattr(self._ensure_materialized(), name)
 
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            super().__setattr__(name, value)
+        elif self._materialized is not None:
+            setattr(self._materialized, name, value)
+        else:
+            setattr(self._ensure_materialized(), name, value)
+
 
 class MixExpression(StreamExpression):
     def __init__(self, operands: list):

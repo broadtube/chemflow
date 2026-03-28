@@ -67,6 +67,16 @@ class StreamExpression:
         stream = self._ensure_materialized()
         return getattr(stream, name)
 
+    def __setattr__(self, name, value):
+        if name.startswith("_"):
+            super().__setattr__(name, value)
+        elif self._materialized is not None:
+            setattr(self._materialized, name, value)
+        else:
+            # materialize してから設定
+            stream = self._ensure_materialized()
+            setattr(stream, name, value)
+
 
 class MixExpression(StreamExpression):
     """混合演算の遅延表現: A + B + C"""

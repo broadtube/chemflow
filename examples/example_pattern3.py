@@ -5,7 +5,7 @@
     2CO + 2H2 → CH3COOH (選択率70%)
     2CO + 3H2 → CH3CHO + H2O (選択率20%)
     CO + 3H2 → CH4 + H2O (選択率10%)
-  反応後に H2O 10mol/h を追加混合
+  反応後に H2O 30mol/h を追加混合
   40°C, 3MPaG で Antoine式 + Henry則 水分離
   ガスは一部パージ、残り循環
 """
@@ -20,13 +20,14 @@ comps = ["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"]
 A3 = Stream(
     {"H2": 0.476, "CO": 0.343, "CO2": 0.156, "CH4": 0.023, "H2O": 0.002},
     basis="volume_frac",
-    total=300,  # NL/h
+    total=300,
     name="Feed",
+    T=25, P="0.1MPaG", phase="Gas",
 )
 
 # 循環ストリーム
-B3 = Stream(components=comps, name="Recycle")
-C3 = Stream(components=comps, name="Mixed")
+B3 = Stream(components=comps, name="Recycle", T=40, P="3MPaG", phase="Gas")
+C3 = Stream(components=comps, name="Mixed", T=200, P="3MPaG", phase="Gas")
 
 eq(C3, A3 + B3)
 
@@ -41,19 +42,33 @@ D3 = C3.multi_react(
     conversion=0.12,
     selectivities=[0.7, 0.2, 0.1],
 )
+D3.name = "ReactOut"
+D3.T_celsius = 280
+D3.P_input = "3MPaG"
+D3.phase = "Gas"
 
-# H2O 10mol/h を追加混合
-H2O_feed = Stream({"H2O": 30}, name="H2O_feed")
+# H2O 30mol/h を追加混合
+H2O_feed = Stream({"H2O": 30}, name="H2O_feed", T=25, phase="Liquid")
 D3_mixed = D3 + H2O_feed
+D3_mixed.name = "PreSep"
+D3_mixed.T_celsius = 40
+D3_mixed.P_input = "3MPaG"
+D3_mixed.phase = "Mixed"
 
 # 水分離 (40°C, 3MPaG)
 G3, Water_out = D3_mixed.separate_water(
     T=40, P="3MPaG",
     name_gas="Gas", name_water="WaterOut",
 )
+G3.T_celsius = 40
+G3.P_input = "3MPaG"
+G3.phase = "Gas"
+Water_out.T_celsius = 40
+Water_out.P_input = "3MPaG"
+Water_out.phase = "Liquid"
 
 # ガスの分割: パージ + 循環
-H3 = Stream(components=comps, name="Purge")
+H3 = Stream(components=comps, name="Purge", T=40, P="3MPaG", phase="Gas")
 eq(G3, H3 + B3)
 
 # 均一組成分割
