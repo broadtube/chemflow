@@ -184,16 +184,11 @@ class Flowsheet:
             for nm in names:
                 h1 += f"  {nm:^{stream_w}s}"
             print(h1)
-            # 単位行
-            h2 = f"{'':>{fw}s}  {'':>{mw_w}s}"
+            # Component/MW + 単位行（合体）
+            h2 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
             for _ in names:
                 h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
             print(h2)
-            # Component / MW 見出し行
-            h3 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
-            for _ in names:
-                h3 += f"  {'':>{abs_w}s} {'':>{rel_w}s}"
-            print(h3)
             # 区切り線
             sep = f"{'':>{fw}s}  {'-' * mw_w}"
             for _ in names:
@@ -244,14 +239,11 @@ class Flowsheet:
                     header.extend([nm, ""])
                 w.writerow(header)
 
-                # 単位行
-                unit_row = ["", ""]
+                # Component/MW + 単位行（合体）
+                unit_row = ["Component", "MW"]
                 for _ in names:
                     unit_row.extend([abs_unit, rel_unit])
                 w.writerow(unit_row)
-
-                # Component / MW 見出し行
-                w.writerow(["Component", "MW"])
 
                 # 成分行
                 for i, formula in enumerate(all_formulas):
@@ -348,15 +340,12 @@ class Flowsheet:
                 ws.Cells(r, col0 + 2 + si * 2).Value = nm
             r += 1
 
-            # 単位行
+            # Component/MW + 単位行（合体）
+            ws.Cells(r, col0).Value = "Component"
+            ws.Cells(r, col0 + 1).Value = "MW"
             for si in range(len(names)):
                 ws.Cells(r, col0 + 2 + si * 2).Value = abs_unit
                 ws.Cells(r, col0 + 3 + si * 2).Value = rel_unit
-            r += 1
-
-            # Component / MW 見出し行
-            ws.Cells(r, col0).Value = "Component"
-            ws.Cells(r, col0 + 1).Value = "MW"
             r += 1
 
             # 成分行
