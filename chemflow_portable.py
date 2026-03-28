@@ -640,6 +640,7 @@ class Flowsheet:
         if t is None:
             raise ValueError("出力するストリームデータがありません。")
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
         try:
             xl = win32com.client.GetActiveObject("Excel.Application")
         except Exception:

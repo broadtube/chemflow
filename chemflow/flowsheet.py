@@ -325,6 +325,7 @@ class Flowsheet:
             raise ValueError("出力するストリームデータがありません。")
 
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
 
         # Excel アプリケーションを取得
         try:
