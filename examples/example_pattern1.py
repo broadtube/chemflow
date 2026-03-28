@@ -1,7 +1,7 @@
 """パターン1: 3ストリーム混合 → Gibbsリアクター → 水凝縮
 
 CO2 5mol/h + CH4 5mol/h + H2O 5mol/h を混合し、
-850°C / 2MPaG で Gibbs 平衡計算を行う。
+850°C / 1.04MPaG で Gibbs 平衡計算を行う。
 平衡種: CO2, CH4, H2O, CO, H2
 その後 30°C まで冷却し、気液平衡で凝縮水を抜き出す。
 """
@@ -10,32 +10,32 @@ from chemflow import Stream, solve, reset, print_streams, set_component_order, e
 
 reset()
 
-A = Stream({"CO2": 5}, name="CO2_feed", T=25, P="2MPaG", phase="Gas")
-B = Stream({"CH4": 5}, name="CH4_feed", T=25, P="2MPaG", phase="Gas")
-C = Stream({"H2O": 5}, name="H2O_feed", T=25, P="2MPaG", phase="Gas")
+A = Stream({"CO2": 5}, name="CO2_feed", T=25, P="1.04MPaG", phase="Gas")
+B = Stream({"CH4": 5}, name="CH4_feed", T=25, P="1.04MPaG", phase="Gas")
+C = Stream({"H2O": 5}, name="H2O_feed", T=25, P="1.04MPaG", phase="Gas")
 
 D = A + B + C
 D.name = "Mixed"
 D.T_celsius = 850
-D.P_input = "2MPaG"
+D.P_input = "1.04MPaG"
 D.phase = "Gas"
 
-E = D.gibbs_react(T=850, P="2MPaG", species=["CO2", "CH4", "H2O", "CO", "H2"])
+E = D.gibbs_react(T=850, P="1.04MPaG", species=["CO2", "CH4", "H2O", "CO", "H2"])
 E.name = "ReactOut"
 E.T_celsius = 850
-E.P_input = "2MPaG"
+E.P_input = "1.04MPaG"
 E.phase = "Gas"
 
 # 30°C まで冷却 → 気液平衡で凝縮水を抜き出す
 Gas, Condensate = E.separate_water(
-    T=30, P="2MPaG",
+    T=30, P="1.04MPaG",
     name_gas="DryGas", name_water="Condensate",
 )
 Gas.T_celsius = 30
-Gas.P_input = "2MPaG"
+Gas.P_input = "1.04MPaG"
 Gas.phase = "Gas"
 Condensate.T_celsius = 30
-Condensate.P_input = "2MPaG"
+Condensate.P_input = "1.04MPaG"
 Condensate.phase = "Liquid"
 
 solve()
