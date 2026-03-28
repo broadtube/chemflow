@@ -552,14 +552,15 @@ class Flowsheet:
         fw = max(max(len(f) for f in all_formulas), 5)
         mw_w, abs_w, rel_w = 8, 10, 8
         stream_w = abs_w + rel_w + 1
+        # ストリーム名行（1回のみ）
+        h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
+        for nm in names: h1 += f"  {nm:^{stream_w}s}"
+        print(h1)
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
             ("weight","g/h","wt%","mass","mass_frac","total_mass"),
         ]:
-            h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-            for nm in names: h1 += f"  {nm:^{stream_w}s}"
-            print(h1)
             h2 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
             for _ in names: h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
             print(h2)
@@ -573,7 +574,6 @@ class Flowsheet:
             row = f"  {'Total':>{fw}s}  {'':>{mw_w}s}"
             for d in data: row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
             print(row)
-            print()
 
     def export_csv(self, path: str) -> None:
         import csv as csv_mod
@@ -583,14 +583,14 @@ class Flowsheet:
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv_mod.writer(f)
+            header = ["", ""]
+            for nm in names: header.extend([nm, ""])
+            w.writerow(header)
             for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
                 ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
                 ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
                 ("weight","g/h","wt%","mass","mass_frac","total_mass"),
             ]:
-                header = ["", ""]
-                for nm in names: header.extend([nm, ""])
-                w.writerow(header)
                 unit_row = ["Component", "MW"]
                 for _ in names: unit_row.extend([abs_unit, rel_unit])
                 w.writerow(unit_row)
@@ -638,14 +638,14 @@ class Flowsheet:
         start = ws.Range(cell)
         row0, col0 = start.Row, start.Column
         r = row0
+        for si, nm in enumerate(names):
+            ws.Cells(r, col0 + 2 + si * 2).Value = nm
+        r += 1
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
             ("weight","g/h","wt%","mass","mass_frac","total_mass"),
         ]:
-            for si, nm in enumerate(names):
-                ws.Cells(r, col0 + 2 + si * 2).Value = nm
-            r += 1
             ws.Cells(r, col0).Value = "Component"
             ws.Cells(r, col0 + 1).Value = "MW"
             for si in range(len(names)):
@@ -663,7 +663,6 @@ class Flowsheet:
             for si, d in enumerate(data):
                 ws.Cells(r, col0 + 2 + si * 2).Value = round(d[total_key], 4)
                 ws.Cells(r, col0 + 3 + si * 2).Value = 1.0
-            r += 1
             r += 1
 
 

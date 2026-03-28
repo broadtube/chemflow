@@ -178,13 +178,16 @@ class Flowsheet:
             ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
+        first_section = True
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
-            # ストリーム名行
-            h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-            for nm in names:
-                h1 += f"  {nm:^{stream_w}s}"
-            print(h1)
-            # Component/MW + 単位行（合体）
+            if first_section:
+                # ストリーム名行（初回のみ）
+                h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
+                for nm in names:
+                    h1 += f"  {nm:^{stream_w}s}"
+                print(h1)
+                first_section = False
+            # Component/MW + 単位行
             h2 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
             for _ in names:
                 h2 += f"  {abs_unit:>{abs_w}s} {rel_unit:>{rel_w}s}"
@@ -205,7 +208,6 @@ class Flowsheet:
             for d in data:
                 row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
             print(row)
-            print()
 
     def export_csv(self, path: str) -> None:
         """全ストリームの結果をCSVファイルに出力する。
@@ -232,14 +234,14 @@ class Flowsheet:
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv_mod.writer(f)
 
-            for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
-                # ストリーム名行
-                header = ["", ""]
-                for nm in names:
-                    header.extend([nm, ""])
-                w.writerow(header)
+            # ストリーム名行（1回のみ）
+            header = ["", ""]
+            for nm in names:
+                header.extend([nm, ""])
+            w.writerow(header)
 
-                # Component/MW + 単位行（合体）
+            for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
+                # Component/MW + 単位行
                 unit_row = ["Component", "MW"]
                 for _ in names:
                     unit_row.extend([abs_unit, rel_unit])
@@ -257,9 +259,6 @@ class Flowsheet:
                 for d in data:
                     total_row.extend([f"{d[total_key]:.4f}", "1.0000"])
                 w.writerow(total_row)
-
-                # セクション間の空行
-                w.writerow([])
 
     def export_excel(self, filename: str, sheet: str, cell: str = "A1") -> None:
         """開いている Excel ブックのシートに結果を出力する。
@@ -334,13 +333,13 @@ class Flowsheet:
 
         r = row0  # 現在の行
 
-        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
-            # ストリーム名行
-            for si, nm in enumerate(names):
-                ws.Cells(r, col0 + 2 + si * 2).Value = nm
-            r += 1
+        # ストリーム名行（1回のみ）
+        for si, nm in enumerate(names):
+            ws.Cells(r, col0 + 2 + si * 2).Value = nm
+        r += 1
 
-            # Component/MW + 単位行（合体）
+        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
+            # Component/MW + 単位行
             ws.Cells(r, col0).Value = "Component"
             ws.Cells(r, col0 + 1).Value = "MW"
             for si in range(len(names)):
@@ -362,7 +361,4 @@ class Flowsheet:
             for si, d in enumerate(data):
                 ws.Cells(r, col0 + 2 + si * 2).Value = round(d[total_key], 4)
                 ws.Cells(r, col0 + 3 + si * 2).Value = 1.0
-            r += 1
-
-            # 空行
             r += 1
