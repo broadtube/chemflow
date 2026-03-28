@@ -40,7 +40,7 @@ Condensate.phase = "Liquid"
 
 solve()
 
-set_component_order(["H2", "CO", "CO2", "CH4", "H2O"])
+set_component_order(["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"])
 
 print("=" * 60)
 print("パターン1: Gibbs平衡 + 水凝縮 (30°C)")
