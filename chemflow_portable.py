@@ -606,6 +606,71 @@ class Flowsheet:
                 w.writerow([])
 
 
+    def export_excel(self, filename: str, sheet: str, cell: str = "A1") -> None:
+        try:
+            import win32com.client
+        except ImportError:
+            raise RuntimeError("win32com が必要です。pip install pywin32 を実行してください。")
+        t = self._prepare_table_data()
+        if t is None:
+            raise ValueError("出力するストリームデータがありません。")
+        all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        try:
+            xl = win32com.client.GetActiveObject("Excel.Application")
+        except Exception:
+            raise RuntimeError("Excel が起動していません。")
+        wb = None
+        for i in range(1, xl.Workbooks.Count + 1):
+            w = xl.Workbooks(i)
+            if w.Name == filename or w.FullName == filename:
+                wb = w
+                break
+        if wb is None:
+            available = [xl.Workbooks(i).Name for i in range(1, xl.Workbooks.Count + 1)]
+            raise ValueError(f"ファイル '{filename}' が開かれていません。開いているファイル: {available}")
+        ws = None
+        for i in range(1, wb.Sheets.Count + 1):
+            s = wb.Sheets(i)
+            if s.Name == sheet:
+                ws = s
+                break
+        if ws is None:
+            available = [wb.Sheets(i).Name for i in range(1, wb.Sheets.Count + 1)]
+            raise ValueError(f"シート '{sheet}' が存在しません。存在するシート: {available}")
+        start = ws.Range(cell)
+        row0, col0 = start.Row, start.Column
+        r = row0
+        for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
+            ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
+            ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
+            ("weight","g/h","wt%","mass","mass_frac","total_mass"),
+        ]:
+            ws.Cells(r, col0).Value = f"[{sec_name}]"
+            r += 1
+            ws.Cells(r, col0).Value = "Component"
+            ws.Cells(r, col0 + 1).Value = "MW"
+            for si, nm in enumerate(names):
+                ws.Cells(r, col0 + 2 + si * 2).Value = nm
+            r += 1
+            for si in range(len(names)):
+                ws.Cells(r, col0 + 2 + si * 2).Value = abs_unit
+                ws.Cells(r, col0 + 3 + si * 2).Value = rel_unit
+            r += 1
+            for i, formula in enumerate(all_formulas):
+                ws.Cells(r, col0).Value = formula
+                ws.Cells(r, col0 + 1).Value = round(mw_map[formula], 2)
+                for si, d in enumerate(data):
+                    ws.Cells(r, col0 + 2 + si * 2).Value = round(d[abs_key][i], 4)
+                    ws.Cells(r, col0 + 3 + si * 2).Value = round(d[rel_key][i], 4)
+                r += 1
+            ws.Cells(r, col0).Value = "Total"
+            for si, d in enumerate(data):
+                ws.Cells(r, col0 + 2 + si * 2).Value = round(d[total_key], 4)
+                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0
+            r += 1
+            r += 1
+
+
 # ============================================================
 # Global Flowsheet
 # ============================================================
@@ -645,6 +710,11 @@ def set_component_order(order: list[str]) -> None:
 def export_csv(path: str) -> None:
     """全ストリームの結果をCSVファイルに出力する。"""
     _get_flowsheet().export_csv(path)
+
+
+def export_excel(filename: str, sheet: str, cell: str = "A1") -> None:
+    """開いている Excel ブックのシートに結果を出力する。"""
+    _get_flowsheet().export_excel(filename, sheet, cell)
 
 
 # ============================================================

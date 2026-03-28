@@ -42,3 +42,8 @@ def set_component_order(order: list[str]) -> None:
 def export_csv(path: str) -> None:
     """全ストリームの結果をCSVファイルに出力する。"""
     _get_flowsheet().export_csv(path)
+
+
+def export_excel(filename: str, sheet: str, cell: str = "A1") -> None:
+    """開いている Excel ブックのシートに結果を出力する。"""
+    _get_flowsheet().export_excel(filename, sheet, cell)
