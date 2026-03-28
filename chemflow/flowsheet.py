@@ -120,7 +120,8 @@ class Flowsheet:
                     all_set.add(c.formula)
 
         if hasattr(self, "_component_order") and self._component_order:
-            ordered = [f for f in self._component_order if f in all_set]
+            # 指定された成分は全て表示（ストリームに存在しなくても0で表示）
+            ordered = list(self._component_order)
             remaining = [f for f in all_default if f not in ordered]
             all_formulas = ordered + remaining
         else:

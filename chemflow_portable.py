@@ -588,7 +588,7 @@ class Flowsheet:
                     all_default.append(c.formula)
                     all_set.add(c.formula)
         if hasattr(self, "_component_order") and self._component_order:
-            ordered = [f for f in self._component_order if f in all_set]
+            ordered = list(self._component_order)
             remaining = [f for f in all_default if f not in ordered]
             all_formulas = ordered + remaining
         else:
