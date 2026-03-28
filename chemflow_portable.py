@@ -9,7 +9,9 @@
 from __future__ import annotations
 
 import csv
+import json
 import re
+from pathlib import Path
 from typing import Callable
 
 import numpy as np
@@ -178,10 +180,129 @@ def antoine_water_psat(T_celsius: float) -> float:
     return (10.0 ** log_p_mmhg) * 133.322
 
 
-HENRY_CONSTANTS_40C = {
-    "H2": 7.82e9, "N2": 9.69e9, "CO": 6.28e9, "CH4": 4.62e9,
-    "CO2": 2.45e8, "CH3CHO": 7.60e5, "CH3COOH": 5.07e4,
+# ============================================================
+# Henry則定数 (Sander 2023, van't Hoff温度依存)
+# ============================================================
+
+_VM_WATER = 18.015e-6  # 水のモル体積 [m3/mol]
+_T0_HENRY = 298.15
+
+_HENRY_BUILTIN = {
+    "H2":      {"Hcp": 7.8e-6,  "Tderiv": 500,  "cas": "1333-74-0"},
+    "N2":      {"Hcp": 6.4e-6,  "Tderiv": 1300, "cas": "7727-37-9"},
+    "O2":      {"Hcp": 1.3e-5,  "Tderiv": 1500, "cas": "7782-44-7"},
+    "CO":      {"Hcp": 9.5e-6,  "Tderiv": 1300, "cas": "630-08-0"},
+    "CO2":     {"Hcp": 3.3e-4,  "Tderiv": 2400, "cas": "124-38-9"},
+    "CH4":     {"Hcp": 1.4e-5,  "Tderiv": 1600, "cas": "74-82-8"},
+    "NH3":     {"Hcp": 5.9e-1,  "Tderiv": 4200, "cas": "7664-41-7"},
+    "H2S":     {"Hcp": 1.0e-3,  "Tderiv": 2100, "cas": "7783-06-4"},
+    "SO2":     {"Hcp": 1.2e-2,  "Tderiv": 2900, "cas": "7446-09-5"},
+    "CH3CHO":  {"Hcp": 1.3e-1,  "Tderiv": 5900, "cas": "75-07-0"},
+    "CH3COOH": {"Hcp": 4.1e+3,  "Tderiv": 6300, "cas": "64-19-7"},
+    "CH3OH":   {"Hcp": 2.2e+0,  "Tderiv": 5200, "cas": "67-56-1"},
+    "C2H5OH":  {"Hcp": 1.9e+0,  "Tderiv": 6600, "cas": "64-17-5"},
+    "HCHO":    {"Hcp": 3.2e+3,  "Tderiv": 6800, "cas": "50-00-0"},
+    "HCOOH":   {"Hcp": 8.9e+3,  "Tderiv": 5700, "cas": "64-18-6"},
 }
+
+_henry_runtime_cache: dict[str, dict] = {}
+
+
+def _henry_pa(Hcp_298, Tderiv, T_kelvin):
+    import math
+    hcp = Hcp_298 * math.exp(Tderiv * (1.0 / T_kelvin - 1.0 / _T0_HENRY))
+    return 1.0 / (hcp * _VM_WATER) if hcp > 0 else 1e15
+
+
+def _henry_fetch_online(formula):
+    """PubChem + henrys-law.org からHenry定数を取得。"""
+    import urllib.request
+    import html as html_mod
+
+    cas = None
+    cas_pat = re.compile(r"^\d{2,7}-\d{2}-\d$")
+    for url in [
+        f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/formula/{formula}/synonyms/JSON?MaxRecords=1",
+        f"https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{formula}/synonyms/JSON",
+    ]:
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "chemflow/1.0"})
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                data = json.loads(resp.read())
+            if "Waiting" in data:
+                continue
+            for syn in data.get("InformationList", {}).get("Information", [{}])[0].get("Synonym", []):
+                if cas_pat.match(syn):
+                    cas = syn
+                    break
+            if cas:
+                break
+        except Exception:
+            continue
+    if not cas:
+        return None
+
+    try:
+        req = urllib.request.Request(
+            f"https://www.henrys-law.org/henry/casrn/{cas}",
+            headers={"User-Agent": "chemflow/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            text = html_mod.unescape(resp.read().decode("utf-8", errors="replace"))
+    except Exception:
+        return None
+
+    hcp_pat = re.compile(r"(\d+\.?\d*)\s*×\s*10<sup>\s*([−+-]?\d+)\s*</sup>")
+    hcp_vals = []
+    for m in hcp_pat.finditer(text):
+        mantissa = float(m.group(1))
+        exp = int(m.group(2).replace("−", "-"))
+        hcp_vals.append(mantissa * (10 ** exp))
+    if not hcp_vals:
+        return None
+
+    td_pat = re.compile(r"<td>\s*(\d{3,5})\s*</td>")
+    td_vals = [int(m.group(1)) for m in td_pat.finditer(text) if 100 <= int(m.group(1)) <= 20000]
+
+    result = {"Hcp": hcp_vals[0], "Tderiv": td_vals[0] if td_vals else 0, "cas": cas, "source": "henrys-law.org"}
+    _henry_runtime_cache[formula] = result
+
+    try:
+        cache_dir = Path.home() / ".chemflow" / "henry_cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        (cache_dir / f"{formula}.json").write_text(json.dumps(result))
+    except Exception:
+        pass
+    return result
+
+
+def _henry_get_data(formula):
+    if formula in _HENRY_BUILTIN:
+        return _HENRY_BUILTIN[formula]
+    if formula in _henry_runtime_cache:
+        return _henry_runtime_cache[formula]
+    try:
+        cache_file = Path.home() / ".chemflow" / "henry_cache" / f"{formula}.json"
+        if cache_file.exists():
+            data = json.loads(cache_file.read_text())
+            _henry_runtime_cache[formula] = data
+            return data
+    except Exception:
+        pass
+    return _henry_fetch_online(formula)
+
+
+def get_henry_constants(formulas, T_celsius):
+    """複数成分のHenry定数 [Pa] を温度依存で取得。"""
+    T_k = T_celsius + 273.15
+    result = {}
+    for f in formulas:
+        if f == "H2O":
+            continue
+        data = _henry_get_data(f)
+        if data:
+            result[f] = _henry_pa(data["Hcp"], data["Tderiv"], T_k)
+    return result
 
 
 class WaterSeparator:
@@ -193,7 +314,15 @@ class WaterSeparator:
         self.water_outlet = water_outlet
         self.T_celsius = T_celsius
         self.P_pascal = P_pascal
-        self.henry = henry_constants or HENRY_CONSTANTS_40C
+        if henry_constants is not None:
+            self.henry = henry_constants
+        else:
+            all_formulas = set()
+            for c in inlet.components:
+                all_formulas.add(c.formula)
+            for c in gas_outlet.components:
+                all_formulas.add(c.formula)
+            self.henry = get_henry_constants(list(all_formulas), T_celsius)
 
     def residuals(self) -> np.ndarray:
         inlet_flows = _get_flows_by_formula(self.inlet)
