@@ -6,7 +6,7 @@ CO2 5mol/h + CH4 5mol/h + H2O 5mol/h を混合し、
 その後 30°C まで冷却し、気液平衡で凝縮水を抜き出す。
 """
 
-from chemflow import Stream, solve, reset, print_streams, set_component_order
+from chemflow import Stream, solve, reset, print_streams, set_component_order, export_csv, export_excel
 
 reset()
 
@@ -46,6 +46,14 @@ print("=" * 60)
 print("パターン1: Gibbs平衡 + 水凝縮 (30°C)")
 print("=" * 60)
 print_streams()
+export_csv("pattern1_result.csv")
+print("\nCSV出力: pattern1_result.csv")
+
+try:
+    export_excel("output.xlsx", "Sheet1", "A1")
+    print("Excel出力: output.xlsx / Sheet1 / A1")
+except Exception as e:
+    print(f"Excel出力スキップ: {e}")
 
 # 元素保存の検証
 print("\n--- 元素保存検証 ---")
