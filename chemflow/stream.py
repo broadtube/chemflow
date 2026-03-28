@@ -44,8 +44,14 @@ class Stream:
         components: list[str] | None = None,
         composition: Stream | None = None,
         name: str | None = None,
+        T: float | None = None,
+        P: float | str | None = None,
+        phase: str | None = None,
     ):
         self.name = name
+        self.T_celsius = T  # 温度 [°C]
+        self.P_input = P    # 圧力（数値[Pa] or 文字列 "3MPaG" 等）
+        self.phase = phase  # "Gas", "Liquid", "Solid", "Mixed"
         self._fixed = False
         self._composition_constraints: list = []
 

@@ -542,20 +542,40 @@ class Flowsheet:
             }
         return {"streams": streams, "all_formulas": all_formulas, "mw_map": mw_map,
                 "data": [_get_values(s, all_formulas) for s in streams],
-                "names": [s.name or f"S{i+1}" for i, s in enumerate(streams)]}
+                "names": [s.name or f"S{i+1}" for i, s in enumerate(streams)],
+                "pressures": [self._to_mpag(s) for s in streams],
+                "temperatures": [f"{s.T_celsius:.1f}" if getattr(s, "T_celsius", None) is not None else "" for s in streams],
+                "phases": [getattr(s, "phase", None) or "" for s in streams]}
+
+    @staticmethod
+    def _to_mpag(s):
+        p = getattr(s, "P_input", None)
+        if p is None:
+            return ""
+        if isinstance(p, str):
+            p_pa = parse_pressure(p)
+        else:
+            p_pa = float(p)
+        return f"{(p_pa - 101325) / 1e6:.3f}"
 
     def print_streams(self) -> None:
         t = self._prepare_table_data()
         if t is None:
             return
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
-        fw = max(max(len(f) for f in all_formulas), 5)
+        pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
+        fw = max(max(len(f) for f in all_formulas), 9)
         mw_w, abs_w, rel_w = 8, 10, 8
         stream_w = abs_w + rel_w + 1
-        # ストリーム名行（1回のみ）
-        h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-        for nm in names: h1 += f"  {nm:^{stream_w}s}"
-        print(h1)
+        def _hr(label, values):
+            row = f"  {label:>{fw}s}  {'':>{mw_w}s}"
+            for v in values: row += f"  {v:^{stream_w}s}"
+            return row
+        print(_hr("No.", [str(i+1) for i in range(len(names))]))
+        print(_hr("", names))
+        print(_hr("P [MPaG]", pressures))
+        print(_hr("T [°C]", temperatures))
+        print(_hr("Phase", phases))
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
@@ -581,11 +601,18 @@ class Flowsheet:
         if t is None:
             return
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
+        def _cr(label, values):
+            row = [label, ""]
+            for v in values: row.extend([v, ""])
+            return row
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv_mod.writer(f)
-            header = ["", ""]
-            for nm in names: header.extend([nm, ""])
-            w.writerow(header)
+            w.writerow(_cr("No.", [str(i+1) for i in range(len(names))]))
+            w.writerow(_cr("", names))
+            w.writerow(_cr("P [MPaG]", pressures))
+            w.writerow(_cr("T [°C]", temperatures))
+            w.writerow(_cr("Phase", phases))
             for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
                 ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
                 ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
@@ -638,9 +665,17 @@ class Flowsheet:
         start = ws.Range(cell)
         row0, col0 = start.Row, start.Column
         r = row0
-        for si, nm in enumerate(names):
-            ws.Cells(r, col0 + 2 + si * 2).Value = nm
-        r += 1
+        def _xr(label, values):
+            nonlocal r
+            ws.Cells(r, col0).Value = label
+            for si, v in enumerate(values):
+                ws.Cells(r, col0 + 2 + si * 2).Value = v
+            r += 1
+        _xr("No.", [str(i+1) for i in range(len(names))])
+        _xr("", names)
+        _xr("P [MPaG]", pressures)
+        _xr("T [°C]", temperatures)
+        _xr("Phase", phases)
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
@@ -842,8 +877,14 @@ class Stream:
         components: list[str] | None = None,
         composition: Stream | None = None,
         name: str | None = None,
+        T: float | None = None,
+        P: float | str | None = None,
+        phase: str | None = None,
     ):
         self.name = name
+        self.T_celsius = T
+        self.P_input = P
+        self.phase = phase
         self._fixed = False
         self._composition_constraints: list = []
 

@@ -152,12 +152,31 @@ class Flowsheet:
         data = [_get_values(s, all_formulas) for s in streams]
         names = [s.name or f"S{i+1}" for i, s in enumerate(streams)]
 
+        # 圧力をMPaGに変換
+        def _to_mpag(s):
+            p = getattr(s, "P_input", None)
+            if p is None:
+                return ""
+            if isinstance(p, str):
+                from chemflow.gibbs import parse_pressure
+                p_pa = parse_pressure(p)
+            else:
+                p_pa = float(p)
+            return f"{(p_pa - 101325) / 1e6:.3f}"
+
+        pressures = [_to_mpag(s) for s in streams]
+        temperatures = [f"{s.T_celsius:.1f}" if getattr(s, "T_celsius", None) is not None else "" for s in streams]
+        phases = [getattr(s, "phase", None) or "" for s in streams]
+
         return {
             "streams": streams,
             "all_formulas": all_formulas,
             "mw_map": mw_map,
             "data": data,
             "names": names,
+            "pressures": pressures,
+            "temperatures": temperatures,
+            "phases": phases,
         }
 
     def print_streams(self) -> None:
@@ -167,10 +186,12 @@ class Flowsheet:
             return
 
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
 
-        fw = max(max(len(f) for f in all_formulas), 5)
+        fw = max(max(len(f) for f in all_formulas), 9)  # "Component" 幅確保
         mw_w, abs_w, rel_w = 8, 10, 8
         stream_w = abs_w + rel_w + 1
+        lbl_w = fw + 2 + mw_w  # 左ラベル幅
 
         sections = [
             ("mol",    "mol/h",  "mol%",  "mol",  "mol_frac",  "total_mol"),
@@ -178,14 +199,25 @@ class Flowsheet:
             ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
+        def _header_row(label, values):
+            row = f"  {label:>{fw}s}  {'':>{mw_w}s}"
+            for v in values:
+                row += f"  {v:^{stream_w}s}"
+            return row
+
         first_section = True
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             if first_section:
-                # ストリーム名行（初回のみ）
-                h1 = f"{'':>{fw}s}  {'':>{mw_w}s}"
-                for nm in names:
-                    h1 += f"  {nm:^{stream_w}s}"
-                print(h1)
+                # No. 行
+                print(_header_row("No.", [str(i+1) for i in range(len(names))]))
+                # ストリーム名行
+                print(_header_row("", names))
+                # 圧力行
+                print(_header_row("P [MPaG]", pressures))
+                # 温度行
+                print(_header_row("T [°C]", temperatures))
+                # フェーズ行
+                print(_header_row("Phase", phases))
                 first_section = False
             # Component/MW + 単位行
             h2 = f"  {'Component':>{fw}s}  {'MW':>{mw_w}s}"
@@ -224,6 +256,7 @@ class Flowsheet:
             return
 
         all_formulas, mw_map, data, names = t["all_formulas"], t["mw_map"], t["data"], t["names"]
+        pressures, temperatures, phases = t["pressures"], t["temperatures"], t["phases"]
 
         sections = [
             ("mol",    "mol/h",  "mol%",  "mol",  "mol_frac",  "total_mol"),
@@ -231,14 +264,21 @@ class Flowsheet:
             ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
+        def _csv_header_row(label, values):
+            row = [label, ""]
+            for v in values:
+                row.extend([v, ""])
+            return row
+
         with open(path, "w", newline="", encoding="utf-8") as f:
             w = csv_mod.writer(f)
 
-            # ストリーム名行（1回のみ）
-            header = ["", ""]
-            for nm in names:
-                header.extend([nm, ""])
-            w.writerow(header)
+            # ヘッダーブロック
+            w.writerow(_csv_header_row("No.", [str(i+1) for i in range(len(names))]))
+            w.writerow(_csv_header_row("", names))
+            w.writerow(_csv_header_row("P [MPaG]", pressures))
+            w.writerow(_csv_header_row("T [°C]", temperatures))
+            w.writerow(_csv_header_row("Phase", phases))
 
             for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
                 # Component/MW + 単位行
@@ -333,10 +373,18 @@ class Flowsheet:
 
         r = row0  # 現在の行
 
-        # ストリーム名行（1回のみ）
-        for si, nm in enumerate(names):
-            ws.Cells(r, col0 + 2 + si * 2).Value = nm
-        r += 1
+        def _xl_header_row(label, values):
+            nonlocal r
+            ws.Cells(r, col0).Value = label
+            for si, v in enumerate(values):
+                ws.Cells(r, col0 + 2 + si * 2).Value = v
+            r += 1
+
+        _xl_header_row("No.", [str(i+1) for i in range(len(names))])
+        _xl_header_row("", names)
+        _xl_header_row("P [MPaG]", pressures)
+        _xl_header_row("T [°C]", temperatures)
+        _xl_header_row("Phase", phases)
 
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             # Component/MW + 単位行
