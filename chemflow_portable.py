@@ -898,7 +898,7 @@ class MixExpression(StreamExpression):
                 if f not in [c.formula for c in outlet.components]:
                     outlet._add_component(f)
         else:
-            outlet = Stream(components=all_formulas)
+            outlet = Stream(components=all_formulas, _internal=True)
         for s in resolved:
             for f in all_formulas:
                 if f not in [c.formula for c in s.components]:
@@ -934,7 +934,7 @@ class ScaleExpression(StreamExpression):
         if target is not None:
             outlet = target
         else:
-            outlet = Stream(components=[c.formula for c in inlet.components])
+            outlet = Stream(components=[c.formula for c in inlet.components], _internal=True)
         _get_flowsheet().add_unit(
             Splitter("SPL_auto", inlet=inlet, outlets=[outlet], ratios=[self._ratio])
         )
@@ -961,6 +961,7 @@ class Stream:
         T: float | None = None,
         P: float | str | None = None,
         phase: str | None = None,
+        _internal: bool = False,
     ):
         self.name = name
         self.T_celsius = T
@@ -979,7 +980,8 @@ class Stream:
             return
 
         if components is not None and flows is None:
-            self._original_formulas = set(components)
+            if not _internal:
+                self._original_formulas = set(components)
             self.components = ComponentRegistry.get_many(components)
             self.n_components = len(self.components)
             self.molar_flows = np.ones(self.n_components)
@@ -1203,7 +1205,7 @@ class Stream:
         for f in stoichiometry:
             if f not in outlet_formulas:
                 outlet_formulas.append(f)
-        outlet = Stream(components=outlet_formulas)
+        outlet = Stream(components=outlet_formulas, _internal=True)
         for f in outlet_formulas:
             self._add_component(f)
         stoich_array = np.zeros(len(outlet_formulas))
@@ -1218,7 +1220,7 @@ class Stream:
 
     def gibbs_react(self, T: float, P: float | str, species: list[str]) -> Stream:
         P_pascal = parse_pressure(P)
-        outlet = Stream(components=list(species))
+        outlet = Stream(components=list(species), _internal=True)
         for f in species:
             self._add_component(f)
         _get_flowsheet().add_unit(GibbsReactor(
@@ -1233,7 +1235,7 @@ class Stream:
             for f in rxn:
                 if f not in outlet_formulas:
                     outlet_formulas.append(f)
-        outlet = Stream(components=outlet_formulas)
+        outlet = Stream(components=outlet_formulas, _internal=True)
         for f in outlet_formulas:
             self._add_component(f)
         _get_flowsheet().add_unit(MultiReactor(
@@ -1248,8 +1250,8 @@ class Stream:
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
-        gas_outlet = Stream(components=gas_formulas, name=name_gas)
-        water_outlet = Stream(components=gas_formulas, name=name_water)
+        gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
+        water_outlet = Stream(components=gas_formulas, name=name_water, _internal=True)
         _get_flowsheet().add_unit(WaterSeparator(
             "SEP_auto", inlet=self, gas_outlet=gas_outlet,
             water_outlet=water_outlet, T_celsius=T, P_pascal=P_pascal,
@@ -1263,8 +1265,8 @@ class Stream:
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
         water_inlet = Stream({"H2O": water_flow})
-        gas_outlet = Stream(components=gas_formulas, name=name_gas)
-        liquid_outlet = Stream(components=gas_formulas, name=name_liquid)
+        gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
+        liquid_outlet = Stream(components=gas_formulas, name=name_liquid, _internal=True)
         _get_flowsheet().add_unit(Absorber(
             "ABS_auto", gas_inlet=self, water_inlet=water_inlet,
             gas_outlet=gas_outlet, liquid_outlet=liquid_outlet,

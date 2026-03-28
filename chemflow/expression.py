@@ -120,7 +120,7 @@ class MixExpression(StreamExpression):
                 if f not in [c.formula for c in outlet.components]:
                     outlet._add_component(f)
         else:
-            outlet = Stream(components=all_formulas)
+            outlet = Stream(components=all_formulas, _internal=True)
 
         # inlet に不足成分を追加（残差計算のため次元を揃える）
         for s in resolved:
@@ -174,7 +174,7 @@ class ScaleExpression(StreamExpression):
             outlet = target
         else:
             formulas = [c.formula for c in inlet.components]
-            outlet = Stream(components=formulas)
+            outlet = Stream(components=formulas, _internal=True)
 
         # Split 残差式: outlet - inlet * ratio = 0
         from chemflow.units import Splitter

@@ -47,6 +47,8 @@ class Stream:
         T: float | None = None,
         P: float | str | None = None,
         phase: str | None = None,
+        _internal: bool = False,
+        **kwargs,
     ):
         self.name = name
         self.T_celsius = T  # 温度 [°C]
@@ -68,7 +70,9 @@ class Stream:
 
         if components is not None and flows is None:
             # 未知ストリーム
-            self._original_formulas = set(components)
+            # _internal=True の場合は内部生成（0拘束しない）
+            if not _internal:
+                self._original_formulas = set(components)
             self.components = ComponentRegistry.get_many(components)
             self.n_components = len(self.components)
             self.molar_flows = np.ones(self.n_components)  # 初期推定（非ゼロ）
@@ -393,7 +397,7 @@ class Stream:
             if formula not in outlet_formulas:
                 outlet_formulas.append(formula)
 
-        outlet = Stream(components=outlet_formulas)
+        outlet = Stream(components=outlet_formulas, _internal=True)
 
         # 入口にも不足成分を追加（次元を揃える）
         for formula in outlet_formulas:
@@ -433,7 +437,7 @@ class Stream:
 
         # 出口成分 = species リスト
         outlet_formulas = list(species)
-        outlet = Stream(components=outlet_formulas)
+        outlet = Stream(components=outlet_formulas, _internal=True)
 
         # 入口にも不足成分を追加
         for formula in outlet_formulas:
@@ -480,7 +484,7 @@ class Stream:
                 if formula not in outlet_formulas:
                     outlet_formulas.append(formula)
 
-        outlet = Stream(components=outlet_formulas)
+        outlet = Stream(components=outlet_formulas, _internal=True)
 
         for formula in outlet_formulas:
             self._add_component(formula)
@@ -530,10 +534,10 @@ class Stream:
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
-        gas_outlet = Stream(components=gas_formulas, name=name_gas)
+        gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
 
         # 液水出口: 全成分（溶解ガスを含む）
-        water_outlet = Stream(components=gas_formulas, name=name_water)
+        water_outlet = Stream(components=gas_formulas, name=name_water, _internal=True)
 
         sep = WaterSeparator(
             "SEP_auto",
@@ -589,10 +593,10 @@ class Stream:
         water_inlet = Stream({"H2O": water_flow}, name=None)
 
         # ガス出口
-        gas_outlet = Stream(components=gas_formulas, name=name_gas)
+        gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
 
         # 液出口（全成分）
-        liquid_outlet = Stream(components=gas_formulas, name=name_liquid)
+        liquid_outlet = Stream(components=gas_formulas, name=name_liquid, _internal=True)
 
         absorber = Absorber(
             "ABS_auto",
