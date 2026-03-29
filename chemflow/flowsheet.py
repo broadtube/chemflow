@@ -94,6 +94,16 @@ class Flowsheet:
     def fix_stream(self, stream) -> None:
         stream._fixed = True
 
+    def set_stream_order(self, order: list[str]) -> None:
+        """出力時のストリーム表示順序を設定する。
+
+        Parameters
+        ----------
+        order : list[str]
+            ストリーム名のリスト。リストにないストリームは末尾に登録順で追加される。
+        """
+        self._stream_order = order
+
     def set_component_order(self, order: list[str]) -> None:
         """出力時の成分表示順序を設定する。
 
@@ -110,6 +120,13 @@ class Flowsheet:
         streams = [s for s in self.streams if s.n_components > 0]
         if not streams:
             return None
+
+        # ストリーム順序の適用
+        if hasattr(self, "_stream_order") and self._stream_order:
+            name_map = {(s.name or f"S{i+1}"): s for i, s in enumerate(streams)}
+            ordered = [name_map[n] for n in self._stream_order if n in name_map]
+            remaining = [s for s in streams if s not in ordered]
+            streams = ordered + remaining
 
         all_set: set[str] = set()
         all_default: list[str] = []

@@ -39,6 +39,11 @@ def set_component_order(order: list[str]) -> None:
     _get_flowsheet().set_component_order(order)
 
 
+def set_stream_order(order: list[str]) -> None:
+    """出力時のストリーム表示順序を設定する。"""
+    _get_flowsheet().set_stream_order(order)
+
+
 def export_csv(path: str) -> None:
     """全ストリームの結果をCSVファイルに出力する。"""
     _get_flowsheet().export_csv(path)

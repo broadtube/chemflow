@@ -574,6 +574,9 @@ class Flowsheet:
             raise SolveError(f"Solver did not converge: {result.message}")
         return result
 
+    def set_stream_order(self, order: list[str]) -> None:
+        self._stream_order = order
+
     def set_component_order(self, order: list[str]) -> None:
         self._component_order = order
 
@@ -581,6 +584,11 @@ class Flowsheet:
         streams = [s for s in self.streams if s.n_components > 0]
         if not streams:
             return None
+        if hasattr(self, "_stream_order") and self._stream_order:
+            name_map = {(s.name or f"S{i+1}"): s for i, s in enumerate(streams)}
+            ordered = [name_map[n] for n in self._stream_order if n in name_map]
+            remaining = [s for s in streams if s not in ordered]
+            streams = ordered + remaining
         all_set, all_default = set(), []
         for s in streams:
             for c in s.components:
@@ -805,6 +813,11 @@ def print_streams() -> None:
 def set_component_order(order: list[str]) -> None:
     """出力時の成分表示順序を設定する。"""
     _get_flowsheet().set_component_order(order)
+
+
+def set_stream_order(order: list[str]) -> None:
+    """出力時のストリーム表示順序を設定する。"""
+    _get_flowsheet().set_stream_order(order)
 
 
 def export_csv(path: str) -> None:
