@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>chemflow フロー図</title>
+<style>
+  body { font-family: sans-serif; margin: 40px; background: #f9f9f9; }
+  h1 { color: #333; }
+  h2 { color: #555; margin-top: 40px; border-bottom: 2px solid #ccc; padding-bottom: 8px; }
+  .mermaid { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin: 20px 0; }
+  .desc { color: #666; font-size: 14px; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<h1>chemflow Process Flow Diagrams</h1>
+
+<h2>Pattern 1: Gibbs Reformer + Water Condensation</h2>
+<p class="desc">Mixed組成指定 → Feed逆算 → Gibbs平衡(850°C, 1.04MPaG) → 25°C冷却・水凝縮</p>
+<div class="mermaid">
+graph LR
+    RG["1. RG_feed\nH2 + CH4\n25°C"]
+    CO2["2. CO2_feed\nCO2\n25°C"]
+    N2["3. N2_feed\n(0)\n25°C"]
+    H2O["4. H2O_feed\nH2O\n25°C"]
+    MIX((Mixer))
+    MIXED["5. Mixed\n204.72 NL/h\n850°C, 1.04MPaG"]
+    GIBBS((Gibbs\nReactor\n850°C))
+    REACT["6. ReactOut\n850°C"]
+    SEP((Water Sep\n25°C))
+    COND["7. Condensate\n25°C\nLiquid"]
+    DRY["8. DryGas\n25°C\nGas"]
+
+    RG --> MIX
+    CO2 --> MIX
+    N2 --> MIX
+    H2O --> MIX
+    MIX --> MIXED
+    MIXED --> GIBBS
+    GIBBS --> REACT
+    REACT --> SEP
+    SEP --> DRY
+    SEP --> COND
+</div>
+
+<h2>Pattern 2: Recycle Loop with Stoichiometric Reactor</h2>
+<p class="desc">循環系: Mixer → 転化率指定Reactor(CO conv 90%) → 均一組成Splitter</p>
+<div class="mermaid">
+graph LR
+    A["A Feed\n(P1 DryGas組成)\nmol_frac + total"]
+    B["B Recycle"]
+    MIX((Mixer))
+    C["C Mixed\n30 mol/h"]
+    RX((Reactor\n2CO+2H2→CH3COOH\nCO conv 90%))
+    D["D ReactOut"]
+    SPL((Splitter\n均一組成))
+    E["E Purge"]
+
+    A --> MIX
+    B --> MIX
+    MIX --> C
+    C --> RX
+    RX --> D
+    D --> SPL
+    SPL --> E
+    SPL --> B
+</div>
+
+<h2>Pattern 3: Multi-Reaction + Absorption Column</h2>
+<p class="desc">3反応同時(CO conv 12%) → 10段吸収塔(40°C, 3MPaG) → 循環系</p>
+<div class="mermaid">
+graph LR
+    FEED["1. Feed\n300 NL/h\nvol% 指定\n25°C"]
+    REC["2. Recycle\n40°C, 3MPaG\nGas"]
+    MIX((Mixer))
+    MIXED["3. Mixed\n30 mol/h\n200°C, 3MPaG"]
+    RX((Multi Reactor\n3反応同時\nCO conv 12%))
+    ROUT["4. ReactOut\n280°C, 3MPaG"]
+    H2Oin["H2O 30mol/h\n25°C\nLiquid"]
+    ABS((Absorber\n10段\n40°C, 3MPaG))
+    GAS["6. Gas\n40°C\nGas"]
+    WOUT["7. WaterOut\n40°C\nLiquid"]
+    SPL((Splitter\n均一組成))
+    PURGE["8. Purge\n40°C\nGas"]
+
+    FEED --> MIX
+    REC --> MIX
+    MIX --> MIXED
+    MIXED --> RX
+    RX --> ROUT
+    ROUT --> ABS
+    H2Oin --> ABS
+    ABS --> GAS
+    ABS --> WOUT
+    GAS --> SPL
+    SPL --> PURGE
+    SPL --> REC
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, theme: 'default' });
+</script>
+</body>
+</html>
