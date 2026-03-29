@@ -258,7 +258,9 @@ class Flowsheet:
             # Total行
             row = f"  {'Total':>{fw}s}  {'':>{mw_w}s}"
             for d in data:
-                row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
+                t_val = d[total_key]
+                r_val = "1.0000" if abs(t_val) > 1e-10 else "0.0000"
+                row += f"  {t_val:{abs_w}.4f} {r_val:>{rel_w}s}"
             print(row)
 
     def export_csv(self, path: str) -> None:
@@ -317,7 +319,9 @@ class Flowsheet:
                 # Total行
                 total_row = ["Total", ""]
                 for d in data:
-                    total_row.extend([f"{d[total_key]:.4f}", "1.0000"])
+                    t_val = d[total_key]
+                    r_val = "1.0000" if abs(t_val) > 1e-10 else "0.0000"
+                    total_row.extend([f"{t_val:.4f}", r_val])
                 w.writerow(total_row)
 
     def export_excel(self, filename: str, sheet: str, cell: str = "A1") -> None:
@@ -430,6 +434,7 @@ class Flowsheet:
             # Total行
             ws.Cells(r, col0).Value = "Total"
             for si, d in enumerate(data):
-                ws.Cells(r, col0 + 2 + si * 2).Value = round(d[total_key], 4)
-                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0
+                t_val = d[total_key]
+                ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 4)
+                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
             r += 1

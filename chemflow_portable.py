@@ -667,7 +667,10 @@ class Flowsheet:
                 for d in data: row += f"  {d[abs_key][i]:{abs_w}.4f} {d[rel_key][i]:{rel_w}.4f}"
                 print(row)
             row = f"  {'Total':>{fw}s}  {'':>{mw_w}s}"
-            for d in data: row += f"  {d[total_key]:{abs_w}.4f} {'1.0000':>{rel_w}s}"
+            for d in data:
+                t_val = d[total_key]
+                r_val = "1.0000" if abs(t_val) > 1e-10 else "0.0000"
+                row += f"  {t_val:{abs_w}.4f} {r_val:>{rel_w}s}"
             print(row)
 
     def export_csv(self, path: str) -> None:
@@ -701,7 +704,9 @@ class Flowsheet:
                     for d in data: row.extend([f"{d[abs_key][i]:.4f}", f"{d[rel_key][i]:.4f}"])
                     w.writerow(row)
                 total_row = ["Total", ""]
-                for d in data: total_row.extend([f"{d[total_key]:.4f}", "1.0000"])
+                for d in data:
+                    t_val = d[total_key]
+                    total_row.extend([f"{t_val:.4f}", "1.0000" if abs(t_val) > 1e-10 else "0.0000"])
                 w.writerow(total_row)
                 w.writerow([])
 
@@ -774,8 +779,9 @@ class Flowsheet:
                 r += 1
             ws.Cells(r, col0).Value = "Total"
             for si, d in enumerate(data):
-                ws.Cells(r, col0 + 2 + si * 2).Value = round(d[total_key], 4)
-                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0
+                t_val = d[total_key]
+                ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 4)
+                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
             r += 1
 
 
