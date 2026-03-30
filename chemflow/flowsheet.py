@@ -561,6 +561,13 @@ class Flowsheet:
                 if hasattr(unit, "water_outlet"):
                     lines.append(f"    {uid} --> {_sid(unit.water_outlet)}")
 
+        # 制約ラベルを注釈ノードとして追加
+        labels = getattr(self, "_constraint_labels", [])
+        if labels:
+            lines.append("")
+            lines.append('    CONSTRAINTS["Constraints:\\n' + "\\n".join(labels) + '"]')
+            lines.append("    style CONSTRAINTS fill:#ffffcc,stroke:#cccc00")
+
         return "\n".join(lines)
 
     def export_mermaid(self, path: str) -> None:

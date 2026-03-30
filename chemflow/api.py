@@ -26,12 +26,23 @@ def eq(target, expression) -> None:
         _get_flowsheet().add_spec(residual)
 
 
-def constrain(residual_func: Callable) -> None:
+def constrain(residual_func: Callable, label: str | None = None) -> None:
     """任意の制約条件を lambda で登録する。
 
+    Parameters
+    ----------
+    residual_func : Callable
+        残差（= 0 になるべき値）を返す関数
+    label : str | None
+        フロー図に表示するラベル（例: "Mixed total = 500 NL/h"）
+
     Usage:
-        constrain(lambda: C.total_molar_flow - 30)
+        constrain(lambda: C.total_molar_flow - 30, "Mixed = 30 mol/h")
         constrain(lambda: A.total_mass_flow - E.total_mass_flow)
-        constrain(lambda: D.mole_fractions - E.mole_fractions)
     """
-    _get_flowsheet().add_spec(lambda: np.atleast_1d(residual_func()))
+    fs = _get_flowsheet()
+    fs.add_spec(lambda: np.atleast_1d(residual_func()))
+    if label is not None:
+        if not hasattr(fs, "_constraint_labels"):
+            fs._constraint_labels = []
+        fs._constraint_labels.append(label)
