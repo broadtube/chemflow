@@ -1,26 +1,25 @@
-"""パターン3: 循環系 + 複数反応 + 水分離
+"""パターン3: 循環系 + 複数反応 + 多段吸収
 
-入口: vol%指定、total 300 NL/h
+入口: vol%指定、total未知（逆算）
+Mixed: total 500 NL/h 固定
   3反応同時進行（CO全体転化率12%）:
     2CO + 2H2 → CH3COOH (選択率70%)
     2CO + 3H2 → CH3CHO + H2O (選択率20%)
     CO + 3H2 → CH4 + H2O (選択率10%)
-  反応後に H2O 30mol/h を追加混合
-  40°C, 3MPaG で Antoine式 + Henry則 水分離
-  ガスは一部パージ、残り循環
+  40°C, 3MPaG で 10段吸収塔（水30mol/h）
+  パージ率 5%（Purge = Gas * 0.05）
 """
 
-from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, export_csv, export_excel
+from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, set_stream_order, export_csv, export_excel
 
 reset()
 
 comps = ["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"]
 
-# Feed: vol%指定、total 300 NL/h
+# Feed: vol%指定、total未知
 A3 = Stream(
     {"H2": 0.476, "CO": 0.343, "CO2": 0.156, "CH4": 0.023, "H2O": 0.002},
     basis="volume_frac",
-    total=300,
     name="Feed",
     T=25, P="0.1MPaG", phase="Gas",
 )
@@ -67,16 +66,18 @@ eq(G3, H3 + B3)
 
 # 均一組成分割
 constrain(lambda: (G3.mole_fractions - H3.mole_fractions)[:-1])
-# Mixed total = 30 mol/h
-constrain(lambda: C3.total_molar_flow - 30)
+# Mixed total = 500 NL/h
+constrain(lambda: C3.total_normal_volume_flow - 500)
+# パージ率 5%: Purge.total_molar_flow = Gas.total_molar_flow * 0.05
+constrain(lambda: H3.total_molar_flow - G3.total_molar_flow * 0.05)
 
 solve()
 
-# 成分表示順序を設定
+# 表示設定
 set_component_order(["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"])
 
 print("=" * 60)
-print("パターン3: 循環系 + 3反応 + 水分離")
+print("パターン3: 循環系 + 3反応 + 多段吸収")
 print("=" * 60)
 print_streams()
 export_csv("pattern3_result.csv")
@@ -90,8 +91,8 @@ except Exception as e:
     print(f"Excel出力スキップ: {e}")
 
 print("\n--- 制約検証 ---")
-print(f"C3 total mol:     {C3.total_molar_flow:.4f} (target: 30)")
-print(f"Feed total NL/h:  {A3.total_normal_volume_flow:.4f} (target: 300)")
-print(f"Feed vol%:        H2={A3.volume_fractions[0]:.4f} CO={A3.volume_fractions[1]:.4f}")
+print(f"Mixed total NL/h: {C3.total_normal_volume_flow:.4f} (target: 500)")
+print(f"Feed total NL/h:  {A3.total_normal_volume_flow:.4f} (逆算)")
+print(f"Purge/Gas ratio:  {H3.total_molar_flow / G3.total_molar_flow:.4f} (target: 0.05)")
 print(f"WaterOut mol:     {Water_out.total_molar_flow:.4f}")
 print(f"Recycle mol:      {B3.total_molar_flow:.4f}")
