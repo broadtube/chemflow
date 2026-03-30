@@ -52,3 +52,13 @@ def export_csv(path: str) -> None:
 def export_excel(filename: str, sheet: str, cell: str = "A1") -> None:
     """開いている Excel ブックのシートに結果を出力する。"""
     _get_flowsheet().export_excel(filename, sheet, cell)
+
+
+def generate_mermaid() -> str:
+    """Mermaid フロー図コードを生成する。"""
+    return _get_flowsheet().generate_mermaid()
+
+
+def export_mermaid(path: str) -> None:
+    """Mermaid フロー図を HTML ファイルとして出力する。"""
+    _get_flowsheet().export_mermaid(path)

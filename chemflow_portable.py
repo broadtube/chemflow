@@ -784,6 +784,80 @@ class Flowsheet:
                 ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
             r += 1
 
+    def generate_mermaid(self) -> str:
+        lines = ["graph LR"]
+        stream_ids = {}
+        unit_counter = 0
+        def _sid(s):
+            key = id(s)
+            if key not in stream_ids:
+                name = s.name or f"S{len(stream_ids)+1}"
+                stream_ids[key] = name.replace(" ", "_").replace("-", "_")
+            return stream_ids[key]
+        def _slabel(s):
+            name = s.name or f"S{len(stream_ids)}"
+            parts = [name]
+            if getattr(s, "T_celsius", None) is not None: parts.append(f"{s.T_celsius}°C")
+            if getattr(s, "P_input", None) is not None: parts.append(str(s.P_input))
+            if getattr(s, "phase", None): parts.append(s.phase)
+            return "\\n".join(parts)
+        for s in self.streams:
+            lines.append(f'    {_sid(s)}["{_slabel(s)}"]')
+        for unit in self.units:
+            unit_counter += 1
+            uid = f"U{unit_counter}"
+            if isinstance(unit, Mixer):
+                is_eq = any(id(getattr(u2, a, None)) == id(unit.outlet) for u2 in self.units if u2 is not unit for a in ("outlet","gas_outlet","liquid_outlet","water_outlet"))
+                if is_eq:
+                    lines.append(f'    {uid}(("Splitter"))')
+                    lines.append(f"    {_sid(unit.outlet)} --> {uid}")
+                    for i in unit.inlets: lines.append(f"    {uid} --> {_sid(i)}")
+                else:
+                    lines.append(f'    {uid}(("Mixer"))')
+                    for i in unit.inlets: lines.append(f"    {_sid(i)} --> {uid}")
+                    lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+            elif isinstance(unit, Splitter):
+                lines.append(f'    {uid}(("Splitter"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                for o in unit.outlets: lines.append(f"    {uid} --> {_sid(o)}")
+            elif isinstance(unit, MultiReactor):
+                lines.append(f'    {uid}(("Reactor\\n{len(unit.reactions)}反応\\nconv {unit.conversion*100:.0f}%"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+            elif isinstance(unit, Reactor):
+                lines.append(f'    {uid}(("Reactor\\nconv {unit.conversion*100:.0f}%"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+            elif isinstance(unit, GibbsReactor):
+                lines.append(f'    {uid}(("Gibbs\\n{unit.T_kelvin-273.15:.0f}°C"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+            elif isinstance(unit, Absorber):
+                lines.append(f'    {uid}(("Absorber\\n{unit.stages}段 {unit.T_celsius:.0f}°C"))')
+                lines.append(f"    {_sid(unit.gas_inlet)} --> {uid}")
+                lines.append(f"    {_sid(unit.water_inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.gas_outlet)}")
+                lines.append(f"    {uid} --> {_sid(unit.liquid_outlet)}")
+            else:
+                label = type(unit).__name__
+                lines.append(f'    {uid}(("{label}"))')
+                if hasattr(unit, "inlet"): lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                if hasattr(unit, "gas_outlet"): lines.append(f"    {uid} --> {_sid(unit.gas_outlet)}")
+                if hasattr(unit, "water_outlet"): lines.append(f"    {uid} --> {_sid(unit.water_outlet)}")
+        return "\n".join(lines)
+
+    def export_mermaid(self, path: str) -> None:
+        mermaid_code = self.generate_mermaid()
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>chemflow Flow Diagram</title>
+<style>body {{ font-family: sans-serif; margin: 40px; }} .mermaid {{ background: white; padding: 20px; }}</style>
+</head><body><h1>{self.name}</h1><div class="mermaid">\n{mermaid_code}\n</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({{ startOnLoad: true, theme: 'default' }});</script>
+</body></html>"""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+
 
 # ============================================================
 # Global Flowsheet
@@ -834,6 +908,16 @@ def export_csv(path: str) -> None:
 def export_excel(filename: str, sheet: str, cell: str = "A1") -> None:
     """開いている Excel ブックのシートに結果を出力する。"""
     _get_flowsheet().export_excel(filename, sheet, cell)
+
+
+def generate_mermaid() -> str:
+    """Mermaid フロー図コードを生成する。"""
+    return _get_flowsheet().generate_mermaid()
+
+
+def export_mermaid(path: str) -> None:
+    """Mermaid フロー図を HTML ファイルとして出力する。"""
+    _get_flowsheet().export_mermaid(path)
 
 
 # ============================================================

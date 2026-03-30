@@ -10,7 +10,7 @@ Mixed: total 500 NL/h 固定
   パージ率 5%（Purge = Gas * 0.05）
 """
 
-from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, set_stream_order, export_csv, export_excel
+from chemflow import Stream, eq, constrain, solve, reset, print_streams, set_component_order, set_stream_order, export_csv, export_excel, export_mermaid
 
 reset()
 
@@ -81,7 +81,9 @@ print("パターン3: 循環系 + 3反応 + 多段吸収")
 print("=" * 60)
 print_streams()
 export_csv("pattern3_result.csv")
+export_mermaid("pattern3_flow.html")
 print("\nCSV出力: pattern3_result.csv")
+print("フロー図: pattern3_flow.html")
 
 # Excel出力（Excelでoutput.xlsxを開いている場合）
 try:

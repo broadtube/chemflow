@@ -438,3 +438,144 @@ class Flowsheet:
                 ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 4)
                 ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
             r += 1
+
+    def generate_mermaid(self) -> str:
+        """Flowsheet からMermaid フロー図を自動生成する。"""
+        from chemflow.units import Mixer, Splitter, Reactor, MultiReactor, Absorber
+        from chemflow.gibbs import GibbsReactor
+
+        lines = ["graph LR"]
+        stream_ids: dict[int, str] = {}  # id(stream) → mermaid node id
+        unit_counter = 0
+
+        def _sid(stream) -> str:
+            """ストリームの Mermaid ノード ID を取得/生成。"""
+            key = id(stream)
+            if key not in stream_ids:
+                name = stream.name or f"S{len(stream_ids)+1}"
+                safe = name.replace(" ", "_").replace("-", "_")
+                stream_ids[key] = safe
+            return stream_ids[key]
+
+        def _slabel(stream) -> str:
+            """ストリームノードのラベルを生成。"""
+            name = stream.name or f"S{len(stream_ids)}"
+            parts = [name]
+            T = getattr(stream, "T_celsius", None)
+            P = getattr(stream, "P_input", None)
+            phase = getattr(stream, "phase", None)
+            if T is not None:
+                parts.append(f"{T}°C")
+            if P is not None:
+                parts.append(str(P))
+            if phase:
+                parts.append(phase)
+            return "\\n".join(parts)
+
+        # ストリームノード定義
+        for i, s in enumerate(self.streams):
+            sid = _sid(s)
+            label = _slabel(s)
+            lines.append(f'    {sid}["{label}"]')
+
+        # 各ユニットの outlet を収集（eq 経由の Mixer 検出用）
+        unit_outlets: set[int] = set()
+        for unit in self.units:
+            for attr in ("outlet", "gas_outlet", "liquid_outlet", "water_outlet"):
+                out = getattr(unit, attr, None)
+                if out is not None:
+                    unit_outlets.add(id(out))
+
+        # ユニットからエッジを生成
+        for unit in self.units:
+            unit_counter += 1
+            uid = f"U{unit_counter}"
+
+            if isinstance(unit, Mixer):
+                # outlet が他のユニットの outlet でもある場合 → eq 経由（実質 Splitter）
+                is_eq_mixer = any(
+                    id(getattr(u2, attr, None)) == id(unit.outlet)
+                    for u2 in self.units if u2 is not unit
+                    for attr in ("outlet", "gas_outlet", "liquid_outlet", "water_outlet")
+                )
+                if is_eq_mixer:
+                    label = "Splitter"
+                    lines.append(f'    {uid}(("{label}"))')
+                    lines.append(f"    {_sid(unit.outlet)} --> {uid}")
+                    for inlet in unit.inlets:
+                        lines.append(f"    {uid} --> {_sid(inlet)}")
+                else:
+                    label = "Mixer"
+                    lines.append(f'    {uid}(("{label}"))')
+                    for inlet in unit.inlets:
+                        lines.append(f"    {_sid(inlet)} --> {uid}")
+                    lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+
+            elif isinstance(unit, Splitter):
+                label = "Splitter"
+                lines.append(f'    {uid}(("{label}"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                for outlet in unit.outlets:
+                    lines.append(f"    {uid} --> {_sid(outlet)}")
+
+            elif isinstance(unit, MultiReactor):
+                rxns = len(unit.reactions)
+                conv = unit.conversion
+                label = f"Reactor\\n{rxns}反応\\nconv {conv*100:.0f}%"
+                lines.append(f'    {uid}(("{label}"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+
+            elif isinstance(unit, Reactor):
+                conv = unit.conversion
+                label = f"Reactor\\nconv {conv*100:.0f}%"
+                lines.append(f'    {uid}(("{label}"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+
+            elif isinstance(unit, GibbsReactor):
+                T = unit.T_kelvin - 273.15
+                label = f"Gibbs\\n{T:.0f}°C"
+                lines.append(f'    {uid}(("{label}"))')
+                lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.outlet)}")
+
+            elif isinstance(unit, Absorber):
+                N = unit.stages
+                T = unit.T_celsius
+                label = f"Absorber\\n{N}段 {T:.0f}°C"
+                lines.append(f'    {uid}(("{label}"))')
+                lines.append(f"    {_sid(unit.gas_inlet)} --> {uid}")
+                lines.append(f"    {_sid(unit.water_inlet)} --> {uid}")
+                lines.append(f"    {uid} --> {_sid(unit.gas_outlet)}")
+                lines.append(f"    {uid} --> {_sid(unit.liquid_outlet)}")
+
+            else:
+                # WaterSeparator 等
+                label = type(unit).__name__
+                lines.append(f'    {uid}(("{label}"))')
+                if hasattr(unit, "inlet"):
+                    lines.append(f"    {_sid(unit.inlet)} --> {uid}")
+                if hasattr(unit, "gas_outlet"):
+                    lines.append(f"    {uid} --> {_sid(unit.gas_outlet)}")
+                if hasattr(unit, "water_outlet"):
+                    lines.append(f"    {uid} --> {_sid(unit.water_outlet)}")
+
+        return "\n".join(lines)
+
+    def export_mermaid(self, path: str) -> None:
+        """Mermaid フロー図を HTML ファイルとして出力する。"""
+        mermaid_code = self.generate_mermaid()
+        html = f"""<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><title>chemflow Flow Diagram</title>
+<style>body {{ font-family: sans-serif; margin: 40px; }} .mermaid {{ background: white; padding: 20px; }}</style>
+</head><body>
+<h1>{self.name}</h1>
+<div class="mermaid">
+{mermaid_code}
+</div>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>mermaid.initialize({{ startOnLoad: true, theme: 'default' }});</script>
+</body></html>"""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
