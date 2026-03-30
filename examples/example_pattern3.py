@@ -91,7 +91,11 @@ print("パターン3: 循環系 + 3反応 + 多段吸収")
 print("=" * 60)
 print_streams()
 export_csv("pattern3_result.csv")
-export_mermaid("pattern3_flow.html")
+export_mermaid(
+    "pattern3_flow.html",
+    title="Pattern 3: Multi-Reaction + Absorption",
+    description="Syngas(vol%指定) → 3反応同時(CO conv 12%) → 10段吸収塔(25°C, 3MPaG, H2O 100g/h) → パージ率5%",
+)
 print("\nCSV出力: pattern3_result.csv")
 print("フロー図: pattern3_flow.html")
 

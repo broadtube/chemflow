@@ -851,12 +851,43 @@ class Flowsheet:
             lines.append("    style CONSTRAINTS fill:#ffffcc,stroke:#cccc00")
         return "\n".join(lines)
 
-    def export_mermaid(self, path: str) -> None:
+    def export_mermaid(self, path: str, title: str | None = None, description: str | None = None) -> None:
         mermaid_code = self.generate_mermaid()
+        t = title or self.name
+        desc_html = f'<p class="desc">{description}</p>' if description else ""
+        streams = [s for s in self.streams if s.n_components > 0]
+        if hasattr(self, "_stream_order") and self._stream_order:
+            name_map = {(s.name or f"S{i+1}"): s for i, s in enumerate(streams)}
+            ordered = [name_map[n] for n in self._stream_order if n in name_map]
+            remaining = [s for s in streams if s not in ordered]
+            streams = ordered + remaining
+        table_rows = ""
+        for i, s in enumerate(streams):
+            name = s.name or f"S{i+1}"
+            T_s = f"{s.T_celsius}°C" if getattr(s, "T_celsius", None) is not None else ""
+            P_s = str(s.P_input) if getattr(s, "P_input", None) is not None else ""
+            ph = getattr(s, "phase", None) or ""
+            mol = f"{s.total_molar_flow:.2f}" if abs(s.total_molar_flow) > 1e-10 else "0"
+            nvol = f"{s.total_normal_volume_flow:.2f}" if abs(s.total_normal_volume_flow) > 1e-10 else "0"
+            mass = f"{s.total_mass_flow:.2f}" if abs(s.total_mass_flow) > 1e-10 else "0"
+            table_rows += f"<tr><td>{i+1}</td><td>{name}</td><td>{T_s}</td><td>{P_s}</td><td>{ph}</td><td>{mol}</td><td>{nvol}</td><td>{mass}</td></tr>\n"
         html = f"""<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><title>chemflow Flow Diagram</title>
-<style>body {{ font-family: sans-serif; margin: 40px; }} .mermaid {{ background: white; padding: 20px; }}</style>
-</head><body><h1>{self.name}</h1><div class="mermaid">\n{mermaid_code}\n</div>
+<html lang="ja"><head><meta charset="UTF-8"><title>{t} - chemflow</title>
+<style>
+body {{ font-family: sans-serif; margin: 40px; background: #f9f9f9; }}
+h1 {{ color: #333; }} h2 {{ color: #555; margin-top: 30px; border-bottom: 2px solid #ccc; padding-bottom: 8px; }}
+.desc {{ color: #666; font-size: 14px; }}
+.mermaid {{ background: white; padding: 20px; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.1); margin: 20px 0; }}
+table {{ border-collapse: collapse; margin: 20px 0; font-size: 14px; }}
+th, td {{ border: 1px solid #ddd; padding: 6px 12px; text-align: right; }}
+th {{ background: #f0f0f0; text-align: center; }}
+td:nth-child(1), td:nth-child(2), td:nth-child(5) {{ text-align: left; }}
+</style></head><body>
+<h1>{t}</h1>{desc_html}
+<h2>Flow Diagram</h2><div class="mermaid">\n{mermaid_code}\n</div>
+<h2>Stream Summary</h2>
+<table><tr><th>No.</th><th>Service</th><th>Temp.</th><th>Press.</th><th>Phase</th><th>mol/h</th><th>NL/h</th><th>g/h</th></tr>
+{table_rows}</table>
 <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>mermaid.initialize({{ startOnLoad: true, theme: 'default' }});</script>
 </body></html>"""
@@ -920,9 +951,9 @@ def generate_mermaid() -> str:
     return _get_flowsheet().generate_mermaid()
 
 
-def export_mermaid(path: str) -> None:
+def export_mermaid(path: str, title: str | None = None, description: str | None = None) -> None:
     """Mermaid フロー図を HTML ファイルとして出力する。"""
-    _get_flowsheet().export_mermaid(path)
+    _get_flowsheet().export_mermaid(path, title=title, description=description)
 
 
 # ============================================================

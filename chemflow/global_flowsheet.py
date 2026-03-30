@@ -59,6 +59,6 @@ def generate_mermaid() -> str:
     return _get_flowsheet().generate_mermaid()
 
 
-def export_mermaid(path: str) -> None:
+def export_mermaid(path: str, title: str | None = None, description: str | None = None) -> None:
     """Mermaid フロー図を HTML ファイルとして出力する。"""
-    _get_flowsheet().export_mermaid(path)
+    _get_flowsheet().export_mermaid(path, title=title, description=description)
