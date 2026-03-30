@@ -16,15 +16,15 @@
 <h1>chemflow Process Flow Diagrams</h1>
 
 <h2>Pattern 1: Gibbs Reformer + Water Condensation</h2>
-<p class="desc">Mixed組成指定 → Feed逆算 → Gibbs平衡(850°C, 1.04MPaG) → 25°C冷却・水凝縮</p>
+<p class="desc">Mixed組成指定(204.72NL/h) → Feed逆算 → Gibbs平衡(850°C, 1.04MPaG) → 25°C冷却・水凝縮</p>
 <div class="mermaid">
 graph LR
-    RG["1. RG_feed\nH2 + CH4\n25°C"]
-    CO2["2. CO2_feed\nCO2\n25°C"]
+    RG["1. RG_feed\nH2 + CH4\n25°C\n(逆算)"]
+    CO2["2. CO2_feed\nCO2\n25°C\n(逆算)"]
     N2["3. N2_feed\n(0)\n25°C"]
-    H2O["4. H2O_feed\nH2O\n25°C"]
+    H2O["4. H2O_feed\nH2O\n25°C\n(逆算)"]
     MIX((Mixer))
-    MIXED["5. Mixed\n204.72 NL/h\n850°C, 1.04MPaG"]
+    MIXED["5. Mixed\n204.72 NL/h\nvol% 指定\n850°C, 1.04MPaG"]
     GIBBS((Gibbs\nReactor\n850°C))
     REACT["6. ReactOut\n850°C"]
     SEP((Water Sep\n25°C))
@@ -67,20 +67,20 @@ graph LR
 </div>
 
 <h2>Pattern 3: Multi-Reaction + Absorption Column</h2>
-<p class="desc">3反応同時(CO conv 12%) → 10段吸収塔(40°C, 3MPaG) → 循環系</p>
+<p class="desc">Feed vol%指定(total逆算) → Mixed 500NL/h → 3反応(CO conv 12%) → 10段吸収塔(40°C, 3MPaG, H2O 100g/h) → パージ率5%</p>
 <div class="mermaid">
 graph LR
-    FEED["1. Feed\n300 NL/h\nvol% 指定\n25°C"]
+    FEED["1. Feed\nvol% 指定\ntotal 逆算\n25°C"]
     REC["2. Recycle\n40°C, 3MPaG\nGas"]
     MIX((Mixer))
-    MIXED["3. Mixed\n30 mol/h\n200°C, 3MPaG"]
+    MIXED["3. Mixed\n500 NL/h\n200°C, 3MPaG"]
     RX((Multi Reactor\n3反応同時\nCO conv 12%))
     ROUT["4. ReactOut\n280°C, 3MPaG"]
-    H2Oin["H2O 30mol/h\n25°C\nLiquid"]
+    H2Oin["5. H2O_abs\n100 g/h\nLiquid"]
     ABS((Absorber\n10段\n40°C, 3MPaG))
     GAS["6. Gas\n40°C\nGas"]
     WOUT["7. WaterOut\n40°C\nLiquid"]
-    SPL((Splitter\n均一組成))
+    SPL((Splitter\n均一組成\nパージ率 5%))
     PURGE["8. Purge\n40°C\nGas"]
 
     FEED --> MIX
