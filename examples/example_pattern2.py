@@ -6,7 +6,7 @@
 均一組成分割。
 """
 
-from chemflow import Stream, eq, constrain, solve, reset, print_streams
+from chemflow import Stream, eq, constrain, solve, reset, print_streams, export_csv, export_mermaid
 
 reset()
 
@@ -40,6 +40,10 @@ print("=" * 60)
 print("パターン2: 循環系計算結果")
 print("=" * 60)
 print_streams()
+export_csv("pattern2_result.csv")
+export_mermaid("pattern2_flow.html")
+print("\nCSV出力: pattern2_result.csv")
+print("フロー図: pattern2_flow.html")
 
 print("\n--- 制約検証 ---")
 print(f"C total mol:  {C.total_molar_flow:.4f} (target: 30)")

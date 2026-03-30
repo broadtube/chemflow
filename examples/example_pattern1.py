@@ -9,7 +9,7 @@ Mixed: total 204.72 NL/h, H2:9.7vol%, CO2:36.5vol%, CH4:23.4vol%, H2O:30.4vol%
 
 from chemflow import (
     Stream, eq, solve, reset, print_streams,
-    set_component_order, set_stream_order, export_csv, export_excel,
+    set_component_order, set_stream_order, export_csv, export_excel, export_mermaid,
 )
 
 reset()
@@ -61,7 +61,9 @@ print("パターン1: Gibbs平衡 + 水凝縮 (25°C)")
 print("=" * 60)
 print_streams()
 export_csv("pattern1_result.csv")
+export_mermaid("pattern1_flow.html")
 print("\nCSV出力: pattern1_result.csv")
+print("フロー図: pattern1_flow.html")
 
 try:
     export_excel("output.xlsx", "Sheet1", "A1")

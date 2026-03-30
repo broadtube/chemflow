@@ -25,7 +25,7 @@ A3 = Stream(
 )
 
 # 循環ストリーム
-B3 = Stream(components=comps, name="Recycle", T=40, P="3MPaG", phase="Gas")
+B3 = Stream(components=comps, name="Recycle", T=25, P="3MPaG", phase="Gas")
 C3 = Stream(components=comps, name="Mixed", T=200, P="3MPaG", phase="Gas")
 
 eq(C3, A3 + B3)
@@ -49,19 +49,19 @@ D3.phase = "Gas"
 # 多段吸収塔 (40°C, 3MPaG, 10段, 水100g/h)
 G3, Water_out = D3.absorb(
     water_flow=100 / 18.015,  # 100 g/h → mol/h
-    T=40, P="3MPaG",
+    T=25, P="3MPaG",
     stages=10,
     name_gas="Gas", name_liquid="WaterOut", name_water="H2O_abs",
 )
-G3.T_celsius = 40
+G3.T_celsius = 25
 G3.P_input = "3MPaG"
 G3.phase = "Gas"
-Water_out.T_celsius = 40
+Water_out.T_celsius = 25
 Water_out.P_input = "3MPaG"
 Water_out.phase = "Liquid"
 
 # ガスの分割: パージ + 循環
-H3 = Stream(components=comps, name="Purge", T=40, P="3MPaG", phase="Gas")
+H3 = Stream(components=comps, name="Purge", T=25, P="3MPaG", phase="Gas")
 eq(G3, H3 + B3)
 
 # 均一組成分割
