@@ -563,6 +563,7 @@ class Stream:
         stages: int = 10,
         name_gas: str | None = None,
         name_liquid: str | None = None,
+        name_water: str | None = None,
         henry_constants: dict[str, float] | None = None,
     ) -> tuple[Stream, Stream]:
         """多段吸収塔 (Kremser式)。
@@ -594,7 +595,7 @@ class Stream:
             gas_formulas.append("H2O")
 
         # 水入口ストリーム（内部生成、固定）
-        water_inlet = Stream({"H2O": water_flow}, name=None)
+        water_inlet = Stream({"H2O": water_flow}, name=name_water)
 
         # ガス出口
         gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)

@@ -46,12 +46,12 @@ D3.T_celsius = 280
 D3.P_input = "3MPaG"
 D3.phase = "Gas"
 
-# 多段吸収塔 (40°C, 3MPaG, 10段, 水30mol/h)
+# 多段吸収塔 (40°C, 3MPaG, 10段, 水100g/h)
 G3, Water_out = D3.absorb(
-    water_flow=30,
+    water_flow=100 / 18.015,  # 100 g/h → mol/h
     T=40, P="3MPaG",
     stages=10,
-    name_gas="Gas", name_liquid="WaterOut",
+    name_gas="Gas", name_liquid="WaterOut", name_water="H2O_abs",
 )
 G3.T_celsius = 40
 G3.P_input = "3MPaG"
