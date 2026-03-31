@@ -1401,12 +1401,12 @@ class Stream:
         ))
         return gas_outlet, water_outlet
 
-    def absorb(self, water_flow, T, P, stages=10, name_gas=None, name_liquid=None, henry_constants=None):
+    def absorb(self, water_flow, T, P, stages=10, name_gas=None, name_liquid=None, name_water=None, henry_constants=None):
         P_pascal = parse_pressure(P)
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
-        water_inlet = Stream({"H2O": water_flow})
+        water_inlet = Stream({"H2O": water_flow}, name=name_water)
         gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
         liquid_outlet = Stream(components=gas_formulas, name=name_liquid, _internal=True)
         _get_flowsheet().add_unit(Absorber(
