@@ -804,6 +804,14 @@ class Flowsheet:
             if getattr(s, "T_celsius", None) is not None: parts.append(f"{s.T_celsius}°C")
             if getattr(s, "P_input", None) is not None: parts.append(str(s.P_input))
             if getattr(s, "phase", None): parts.append(s.phase)
+            if s._fixed:
+                total = s.total_molar_flow
+                if abs(total) > 1e-10:
+                    parts.append(f"{total:.2f} mol/h")
+                    parts.append(f"{s.total_normal_volume_flow:.2f} NL/h")
+                    parts.append(f"{s.total_mass_flow:.2f} g/h")
+                else:
+                    parts.append("(0)")
             return "\\n".join(parts)
         for s in self.streams:
             lines.append(f'    {_sid(s)}["{_slabel(s)}"]')
