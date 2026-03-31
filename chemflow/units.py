@@ -268,9 +268,13 @@ def _kremser_absorption_fraction(A, N):
     float
         吸収率 (0〜1)
     """
+    if A < 1e-12:
+        return 0.0
     if abs(A - 1.0) < 1e-10:
-        # A ≈ 1 の特殊ケース
         return N / (N + 1.0)
+    if A > 100:
+        # A >> 1: 実質100%吸収
+        return 1.0
     AN1 = A ** (N + 1)
     return (AN1 - A) / (AN1 - 1.0)
 

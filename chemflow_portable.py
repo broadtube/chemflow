@@ -363,8 +363,12 @@ class WaterSeparator:
 
 
 def _kremser_absorption_fraction(A, N):
+    if A < 1e-12:
+        return 0.0
     if abs(A - 1.0) < 1e-10:
         return N / (N + 1.0)
+    if A > 100:
+        return 1.0
     AN1 = A ** (N + 1)
     return (AN1 - A) / (AN1 - 1.0)
 
