@@ -695,6 +695,8 @@ class Flowsheet:
                 "total_NL": round(float(s.total_normal_volume_flow), 4),
                 "total_g": round(float(s.total_mass_flow), 4),
                 "components": comp_flows,
+                "original_components": sorted(s._original_formulas) if getattr(s, "_original_formulas", None) else None,
+                "has_composition_constraints": len(getattr(s, "_composition_constraints", [])) > 0,
             }
             json_streams.append(entry)
 
@@ -769,14 +771,22 @@ class Flowsheet:
 
             json_units.append(entry)
 
-        # 制約ラベル
+        # 制約
         labels = getattr(self, "_constraint_labels", [])
+        codes = getattr(self, "_constraint_codes", [])
+        json_constraints = []
+        for i in range(max(len(labels), len(codes))):
+            json_constraints.append({
+                "label": labels[i] if i < len(labels) else "",
+                "code": codes[i] if i < len(codes) else "",
+            })
 
         return {
             "name": self.name,
             "streams": json_streams,
             "units": json_units,
-            "constraints": labels,
+            "constraints": [c["label"] for c in json_constraints if c["label"]],
+            "constraint_specs": json_constraints,
             "component_order": getattr(self, "_component_order", None),
             "stream_order": getattr(self, "_stream_order", None),
         }

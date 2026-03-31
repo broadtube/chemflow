@@ -26,7 +26,7 @@ def eq(target, expression) -> None:
         _get_flowsheet().add_spec(residual)
 
 
-def constrain(residual_func: Callable, label: str | None = None) -> None:
+def constrain(residual_func: Callable, label: str | None = None, code: str | None = None) -> None:
     """任意の制約条件を lambda で登録する。
 
     Parameters
@@ -34,15 +34,20 @@ def constrain(residual_func: Callable, label: str | None = None) -> None:
     residual_func : Callable
         残差（= 0 になるべき値）を返す関数
     label : str | None
-        フロー図に表示するラベル（例: "Mixed total = 500 NL/h"）
+        フロー図に表示するラベル
+    code : str | None
+        制約の Python 式文字列（JSON 保存・復元用）
 
     Usage:
-        constrain(lambda: C.total_molar_flow - 30, "Mixed = 30 mol/h")
-        constrain(lambda: A.total_mass_flow - E.total_mass_flow)
+        constrain(lambda: C.total_molar_flow - 30,
+                  label="Mixed = 30 mol/h",
+                  code="lambda: Mixed.total_molar_flow - 30")
     """
     fs = _get_flowsheet()
     fs.add_spec(lambda: np.atleast_1d(residual_func()))
-    if label is not None:
-        if not hasattr(fs, "_constraint_labels"):
-            fs._constraint_labels = []
-        fs._constraint_labels.append(label)
+    if not hasattr(fs, "_constraint_labels"):
+        fs._constraint_labels = []
+    if not hasattr(fs, "_constraint_codes"):
+        fs._constraint_codes = []
+    fs._constraint_labels.append(label or "")
+    fs._constraint_codes.append(code or "")

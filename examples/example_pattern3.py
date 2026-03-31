@@ -72,11 +72,17 @@ Purge = Stream(components=comps, name="Purge", T=25, P="5MPaG", phase="Gas")
 eq(Gas, Purge + Recycle)
 
 # 均一組成分割
-constrain(lambda: (Gas.mole_fractions - Purge.mole_fractions)[:-1], "均一組成分割")
+constrain(lambda: (Gas.mole_fractions - Purge.mole_fractions)[:-1],
+          label="均一組成分割",
+          code="lambda: (Gas.mole_fractions - Purge.mole_fractions)[:-1]")
 # Mixed total = 500 NL/h
-constrain(lambda: Mixed.total_normal_volume_flow - 500, "Mixed = 500 NL/h")
+constrain(lambda: Mixed.total_normal_volume_flow - 500,
+          label="Mixed = 500 NL/h",
+          code="lambda: Mixed.total_normal_volume_flow - 500")
 # パージ率 5%
-constrain(lambda: Purge.total_molar_flow - Gas.total_molar_flow * 0.05, "Purge rate = 5%")
+constrain(lambda: Purge.total_molar_flow - Gas.total_molar_flow * 0.05,
+          label="Purge rate = 5%",
+          code="lambda: Purge.total_molar_flow - Gas.total_molar_flow * 0.05")
 
 solve()
 
