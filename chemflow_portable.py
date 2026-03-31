@@ -821,7 +821,13 @@ class Flowsheet:
             if isinstance(unit, Mixer):
                 is_eq = any(id(getattr(u2, a, None)) == id(unit.outlet) for u2 in self.units if u2 is not unit for a in ("outlet","gas_outlet","liquid_outlet","water_outlet"))
                 if is_eq:
-                    lines.append(f'    {uid}(("Splitter"))')
+                    total_out = unit.outlet.total_molar_flow
+                    ratios = []
+                    for i in unit.inlets:
+                        r = i.total_molar_flow / total_out if abs(total_out) > 1e-10 else 0
+                        ratios.append(f"{r*100:.1f}%")
+                    label = "Splitter\\n" + " / ".join(ratios)
+                    lines.append(f'    {uid}(("{label}"))')
                     lines.append(f"    {_sid(unit.outlet)} --> {uid}")
                     for i in unit.inlets: lines.append(f"    {uid} --> {_sid(i)}")
                 else:
@@ -829,7 +835,9 @@ class Flowsheet:
                     for i in unit.inlets: lines.append(f"    {_sid(i)} --> {uid}")
                     lines.append(f"    {uid} --> {_sid(unit.outlet)}")
             elif isinstance(unit, Splitter):
-                lines.append(f'    {uid}(("Splitter"))')
+                ratio_strs = [f"{r*100:.1f}%" for r in unit.ratios]
+                label = "Splitter\\n" + " / ".join(ratio_strs)
+                lines.append(f'    {uid}(("{label}"))')
                 lines.append(f"    {_sid(unit.inlet)} --> {uid}")
                 for o in unit.outlets: lines.append(f"    {uid} --> {_sid(o)}")
             elif isinstance(unit, MultiReactor):

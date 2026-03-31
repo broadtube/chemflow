@@ -510,7 +510,13 @@ class Flowsheet:
                     for attr in ("outlet", "gas_outlet", "liquid_outlet", "water_outlet")
                 )
                 if is_eq_mixer:
-                    label = "Splitter"
+                    # solve 後の実際の分割比を計算
+                    total_out = unit.outlet.total_molar_flow
+                    ratios = []
+                    for inlet in unit.inlets:
+                        r = inlet.total_molar_flow / total_out if abs(total_out) > 1e-10 else 0
+                        ratios.append(f"{r*100:.1f}%")
+                    label = "Splitter\\n" + " / ".join(ratios)
                     lines.append(f'    {uid}(("{label}"))')
                     lines.append(f"    {_sid(unit.outlet)} --> {uid}")
                     for inlet in unit.inlets:
@@ -523,7 +529,8 @@ class Flowsheet:
                     lines.append(f"    {uid} --> {_sid(unit.outlet)}")
 
             elif isinstance(unit, Splitter):
-                label = "Splitter"
+                ratio_strs = [f"{r*100:.1f}%" for r in unit.ratios]
+                label = "Splitter\\n" + " / ".join(ratio_strs)
                 lines.append(f'    {uid}(("{label}"))')
                 lines.append(f"    {_sid(unit.inlet)} --> {uid}")
                 for outlet in unit.outlets:
