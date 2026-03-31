@@ -32,7 +32,7 @@ Rx_Water_Feed = Stream({"H2O": 0}, name="Rx_Water_Feed", T=25, phase="Liquid")
 
 # 循環ストリーム
 Recycle = Stream(components=comps, name="Recycle", T=25, P="5MPaG", phase="Gas")
-Mixed = Stream(components=comps, name="Mixed", T=200, P="5MPaG", phase="Gas")
+Mixed = Stream(components=comps, name="Mixed", T=25, P="5MPaG", phase="Gas")
 
 eq(Mixed, Syngas_feed + H2_feed + N2_feed + Rx_Water_Feed + Recycle)
 
@@ -48,7 +48,7 @@ ReactOut = Mixed.multi_react(
     selectivities=[0.7, 0.2, 0.1],
 )
 ReactOut.name = "ReactOut"
-ReactOut.T_celsius = 280
+ReactOut.T_celsius = 250
 ReactOut.P_input = "5MPaG"
 ReactOut.phase = "Gas"
 
