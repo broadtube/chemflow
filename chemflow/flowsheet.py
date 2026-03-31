@@ -799,7 +799,7 @@ class Flowsheet:
             json_mod.dump(data, f, indent=2, ensure_ascii=False)
 
     def export_reactflow(self, path: str, title: str | None = None, description: str | None = None) -> None:
-        """ReactFlow によるインタラクティブフロー図を HTML として出力する。"""
+        """dagre + SVG によるインタラクティブフロー図を HTML として出力する。"""
         import json as json_mod
         data = self.generate_json()
         t = title or self.name
@@ -810,26 +810,24 @@ class Flowsheet:
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>{t} - chemflow ReactFlow</title>
-<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-<script src="https://unpkg.com/@xyflow/react@12/dist/umd/index.js"></script>
-<link href="https://unpkg.com/@xyflow/react@12/dist/style.css" rel="stylesheet" />
+<title>{t} - chemflow</title>
 <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
 <style>
-  body {{ margin: 0; font-family: sans-serif; }}
-  #header {{ padding: 15px 30px; background: #f0f0f0; border-bottom: 1px solid #ccc; }}
-  #header h1 {{ margin: 0 0 5px 0; font-size: 20px; color: #333; }}
+  body {{ margin: 0; font-family: sans-serif; background: #f9f9f9; }}
+  #header {{ padding: 15px 30px; background: #fff; border-bottom: 1px solid #ddd; }}
+  #header h1 {{ margin: 0 0 4px 0; font-size: 20px; color: #333; }}
   #header p {{ margin: 0; font-size: 13px; color: #666; }}
-  #root {{ width: 100vw; height: calc(100vh - 70px); }}
-  .stream-node {{ padding: 10px 14px; border-radius: 6px; border: 2px solid #555; background: white; font-size: 11px; min-width: 120px; }}
-  .stream-node.fixed {{ border-color: #2196F3; background: #E3F2FD; }}
-  .stream-node.variable {{ border-color: #4CAF50; background: #E8F5E9; }}
-  .stream-node.zero {{ border-color: #9E9E9E; background: #F5F5F5; }}
-  .stream-node .name {{ font-weight: bold; font-size: 13px; margin-bottom: 4px; }}
-  .stream-node .info {{ color: #666; }}
-  .unit-node {{ padding: 8px 12px; border-radius: 20px; border: 2px solid #FF9800; background: #FFF3E0; font-size: 11px; text-align: center; }}
-  .constraint-node {{ padding: 8px 12px; border-radius: 4px; border: 2px solid #cccc00; background: #ffffcc; font-size: 11px; white-space: pre-line; }}
+  #canvas {{ width: 100%; overflow: auto; padding: 20px; }}
+  svg {{ cursor: grab; }}
+  svg:active {{ cursor: grabbing; }}
+  .node-stream rect {{ rx: 6; ry: 6; stroke-width: 2; }}
+  .node-stream.fixed rect {{ fill: #E3F2FD; stroke: #2196F3; }}
+  .node-stream.variable rect {{ fill: #E8F5E9; stroke: #4CAF50; }}
+  .node-stream.zero rect {{ fill: #F5F5F5; stroke: #9E9E9E; }}
+  .node-unit rect {{ rx: 16; ry: 16; fill: #FFF3E0; stroke: #FF9800; stroke-width: 2; }}
+  .node-constraint rect {{ rx: 4; ry: 4; fill: #ffffcc; stroke: #cccc00; stroke-width: 2; }}
+  .node text {{ font-family: sans-serif; }}
+  .edge {{ fill: none; stroke: #888; stroke-width: 2; marker-end: url(#arrow); }}
 </style>
 </head>
 <body>
@@ -837,146 +835,113 @@ class Flowsheet:
   <h1>{t}</h1>
   <p>{desc}</p>
 </div>
-<div id="root"></div>
+<div id="canvas"></div>
 <script>
-const flowData = {json_str};
+const D = {json_str};
 
-const {{ ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position }} = window.XYFlow || window.ReactFlow || {{}};
-
-// Build nodes and edges from flowData
-const nodes = [];
+// Build nodes and edges
+const nodes = {{}};
 const edges = [];
-const nodeWidth = 160;
-const nodeHeight = 80;
-const unitWidth = 130;
-const unitHeight = 60;
+const NW = 170, NH = 90, UW = 140, UH = 65, CW = 200, CH = 80;
 
-// Stream nodes
-flowData.streams.forEach((s, i) => {{
+D.streams.forEach(s => {{
   let cls = 'variable';
   if (s.fixed && Math.abs(s.total_mol) < 1e-10) cls = 'zero';
   else if (s.fixed) cls = 'fixed';
-  let info = [];
-  if (s.T_celsius !== null) info.push(s.T_celsius + '°C');
-  if (s.P_input) info.push(s.P_input);
-  if (s.phase) info.push(s.phase);
-  if (s.fixed && Math.abs(s.total_mol) > 1e-10) {{
-    info.push(s.total_mol.toFixed(2) + ' mol/h');
-    info.push(s.total_NL.toFixed(2) + ' NL/h');
-    info.push(s.total_g.toFixed(2) + ' g/h');
-  }} else if (s.fixed) {{
-    info.push('(0)');
-  }}
-  nodes.push({{
-    id: s.id,
-    type: 'stream',
-    data: {{ label: s.id, index: s.index, info: info.join(' | '), cls: cls }},
-    position: {{ x: 0, y: 0 }},
-  }});
+  let lines = [s.index + '. ' + s.id];
+  if (s.T_celsius !== null) lines.push(s.T_celsius + '°C');
+  if (s.P_input) lines.push(s.P_input);
+  if (s.phase) lines.push(s.phase);
+  if (s.fixed && Math.abs(s.total_mol) > 1e-10) lines.push(s.total_mol.toFixed(2)+' mol/h, '+s.total_g.toFixed(0)+' g/h');
+  else if (s.fixed) lines.push('(0)');
+  nodes[s.id] = {{ id: s.id, type: 'stream', cls, lines, w: NW, h: NH }};
 }});
 
-// Unit nodes + edges
-flowData.units.forEach((u) => {{
-  let label = u.type;
-  if (u.type === 'MultiReactor') label = 'Reactor\\n' + (u.reactions ? u.reactions.length + '反応' : '') + '\\nconv ' + ((u.conversion||0)*100).toFixed(0) + '%';
-  else if (u.type === 'Reactor') label = 'Reactor\\nconv ' + ((u.conversion||0)*100).toFixed(0) + '%';
-  else if (u.type === 'GibbsReactor') label = 'Gibbs\\n' + (u.T_celsius||'') + '°C';
-  else if (u.type === 'Absorber') label = 'Absorber\\n' + (u.stages||'') + '段 ' + (u.T_celsius||'') + '°C';
-  else if (u.type === 'Splitter (eq)') {{
-    const rs = (u.ratios||[]).map(r => (r*100).toFixed(1)+'%').join(' / ');
-    label = 'Splitter\\n' + rs;
-  }} else if (u.type === 'Splitter') {{
-    const rs = (u.ratios||[]).map(r => (r*100).toFixed(1)+'%').join(' / ');
-    label = 'Splitter\\n' + rs;
-  }}
-  nodes.push({{ id: u.id, type: 'unit', data: {{ label: label }}, position: {{ x:0, y:0 }} }});
+D.units.forEach(u => {{
+  let lines = [u.type];
+  if (u.type==='MultiReactor') lines = ['Reactor', (u.reactions||[]).length+'反応', 'conv '+ ((u.conversion||0)*100).toFixed(0)+'%'];
+  else if (u.type==='Reactor') lines = ['Reactor', 'conv '+((u.conversion||0)*100).toFixed(0)+'%'];
+  else if (u.type==='GibbsReactor') lines = ['Gibbs', (u.T_celsius||'')+'°C'];
+  else if (u.type==='Absorber') lines = ['Absorber', (u.stages||'')+'段 '+(u.T_celsius||'')+'°C'];
+  else if (u.type==='Splitter (eq)'||u.type==='Splitter') {{
+    const rs = (u.ratios||[]).map(r=>(r*100).toFixed(1)+'%').join(' / ');
+    lines = ['Splitter', rs];
+  }} else if (u.type==='WaterSeparator') lines = ['Water Sep'];
+  nodes[u.id] = {{ id: u.id, type: 'unit', cls: '', lines, w: UW, h: UH }};
 
-  // Edges
-  if (u.type === 'Mixer') {{
-    (u.sources||[]).forEach(s => edges.push({{ id: u.id+'_from_'+s, source: s, target: u.id }}));
-    if (u.target) edges.push({{ id: u.id+'_to_'+u.target, source: u.id, target: u.target }});
-  }} else if (u.type === 'Splitter (eq)' || u.type === 'Splitter') {{
-    if (u.source) edges.push({{ id: u.id+'_from_'+u.source, source: u.source, target: u.id }});
-    (u.targets||[]).forEach(t => edges.push({{ id: u.id+'_to_'+t, source: u.id, target: t }}));
-  }} else if (u.type === 'Absorber') {{
-    if (u.gas_inlet) edges.push({{ id: u.id+'_gi', source: u.gas_inlet, target: u.id }});
-    if (u.water_inlet) edges.push({{ id: u.id+'_wi', source: u.water_inlet, target: u.id }});
-    if (u.gas_outlet) edges.push({{ id: u.id+'_go', source: u.id, target: u.gas_outlet }});
-    if (u.liquid_outlet) edges.push({{ id: u.id+'_lo', source: u.id, target: u.liquid_outlet }});
-  }} else if (u.type === 'WaterSeparator') {{
-    if (u.source) edges.push({{ id: u.id+'_in', source: u.source, target: u.id }});
-    if (u.gas_outlet) edges.push({{ id: u.id+'_go', source: u.id, target: u.gas_outlet }});
-    if (u.water_outlet) edges.push({{ id: u.id+'_wo', source: u.id, target: u.water_outlet }});
+  if (u.type==='Mixer') {{
+    (u.sources||[]).forEach(s => edges.push({{from:s,to:u.id}}));
+    if (u.target) edges.push({{from:u.id,to:u.target}});
+  }} else if (u.type==='Splitter (eq)'||u.type==='Splitter') {{
+    if (u.source) edges.push({{from:u.source,to:u.id}});
+    (u.targets||[]).forEach(t => edges.push({{from:u.id,to:t}}));
+  }} else if (u.type==='Absorber') {{
+    if (u.gas_inlet) edges.push({{from:u.gas_inlet,to:u.id}});
+    if (u.water_inlet) edges.push({{from:u.water_inlet,to:u.id}});
+    if (u.gas_outlet) edges.push({{from:u.id,to:u.gas_outlet}});
+    if (u.liquid_outlet) edges.push({{from:u.id,to:u.liquid_outlet}});
+  }} else if (u.type==='WaterSeparator') {{
+    if (u.source) edges.push({{from:u.source,to:u.id}});
+    if (u.gas_outlet) edges.push({{from:u.id,to:u.gas_outlet}});
+    if (u.water_outlet) edges.push({{from:u.id,to:u.water_outlet}});
   }} else {{
-    if (u.source) edges.push({{ id: u.id+'_in', source: u.source, target: u.id }});
-    if (u.target) edges.push({{ id: u.id+'_out', source: u.id, target: u.target }});
+    if (u.source) edges.push({{from:u.source,to:u.id}});
+    if (u.target) edges.push({{from:u.id,to:u.target}});
   }}
 }});
 
-// Constraints node
-if (flowData.constraints && flowData.constraints.length > 0) {{
-  nodes.push({{ id: 'CONSTRAINTS', type: 'constraint', data: {{ label: 'Constraints:\\n' + flowData.constraints.join('\\n') }}, position: {{ x:0, y:0 }} }});
+const cLabels = (D.constraints||[]).filter(c=>c);
+if (cLabels.length) {{
+  nodes['CONSTRAINTS'] = {{ id:'CONSTRAINTS', type:'constraint', cls:'', lines:['Constraints:'].concat(cLabels), w:CW, h:20+cLabels.length*16 }};
 }}
 
 // Dagre layout
 const g = new dagre.graphlib.Graph();
-g.setGraph({{ rankdir: 'LR', nodesep: 50, ranksep: 80 }});
-g.setDefaultEdgeLabel(() => ({{}}));
-nodes.forEach(n => {{
-  const w = n.type === 'unit' ? unitWidth : (n.type === 'constraint' ? 180 : nodeWidth);
-  const h = n.type === 'unit' ? unitHeight : (n.type === 'constraint' ? 80 : nodeHeight);
-  g.setNode(n.id, {{ width: w, height: h }});
-}});
-edges.forEach(e => g.setEdge(e.source, e.target));
+g.setGraph({{ rankdir:'LR', nodesep:40, ranksep:70 }});
+g.setDefaultEdgeLabel(()=>({{}}));
+Object.values(nodes).forEach(n => g.setNode(n.id, {{width:n.w, height:n.h}}));
+edges.forEach(e => g.setEdge(e.from, e.to));
 dagre.layout(g);
-nodes.forEach(n => {{
-  const pos = g.node(n.id);
-  n.position = {{ x: pos.x - (pos.width||nodeWidth)/2, y: pos.y - (pos.height||nodeHeight)/2 }};
+Object.values(nodes).forEach(n => {{ const p=g.node(n.id); n.x=p.x; n.y=p.y; }});
+
+// SVG rendering
+const pad = 40;
+let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
+Object.values(nodes).forEach(n => {{
+  minX=Math.min(minX,n.x-n.w/2); minY=Math.min(minY,n.y-n.h/2);
+  maxX=Math.max(maxX,n.x+n.w/2); maxY=Math.max(maxY,n.y+n.h/2);
+}});
+const svgW=maxX-minX+pad*2, svgH=maxY-minY+pad*2;
+
+let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${{svgW}}" height="${{svgH}}" viewBox="${{minX-pad}} ${{minY-pad}} ${{svgW}} ${{svgH}}">`;
+svg += `<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#888"/></marker></defs>`;
+
+// Draw edges
+edges.forEach(e => {{
+  const f=nodes[e.from], t=nodes[e.to];
+  if(!f||!t) return;
+  const x1=f.x+f.w/2, y1=f.y, x2=t.x-t.w/2, y2=t.y;
+  const mx=(x1+x2)/2;
+  svg += `<path class="edge" d="M${{x1}},${{y1}} C${{mx}},${{y1}} ${{mx}},${{y2}} ${{x2}},${{y2}}"/>`;
 }});
 
-// Custom node components
-const StreamNode = ({{ data }}) => {{
-  return React.createElement('div', {{ className: 'stream-node ' + data.cls }},
-    React.createElement(Handle, {{ type: 'target', position: Position.Left }}),
-    React.createElement('div', {{ className: 'name' }}, data.index + '. ' + data.label),
-    React.createElement('div', {{ className: 'info' }}, data.info),
-    React.createElement(Handle, {{ type: 'source', position: Position.Right }}),
-  );
-}};
-const UnitNode = ({{ data }}) => {{
-  return React.createElement('div', {{ className: 'unit-node' }},
-    React.createElement(Handle, {{ type: 'target', position: Position.Left }}),
-    React.createElement('div', null, data.label.replace(/\\\\n/g, '\\n').split('\\n').map((l,i) => React.createElement('div', {{key:i}}, l))),
-    React.createElement(Handle, {{ type: 'source', position: Position.Right }}),
-  );
-}};
-const ConstraintNode = ({{ data }}) => {{
-  return React.createElement('div', {{ className: 'constraint-node' }},
-    data.label.split('\\n').map((l,i) => React.createElement('div', {{key:i}}, l)),
-  );
-}};
+// Draw nodes
+Object.values(nodes).forEach(n => {{
+  const x=n.x-n.w/2, y=n.y-n.h/2;
+  const cls = 'node node-'+n.type+(n.cls?' '+n.cls:'');
+  svg += `<g class="${{cls}}" transform="translate(${{x}},${{y}})">`;
+  svg += `<rect width="${{n.w}}" height="${{n.h}}"/>`;
+  const fs = n.type==='unit' ? 11 : (n.type==='constraint' ? 10 : 11);
+  n.lines.forEach((l,i) => {{
+    const ty = n.type==='constraint' ? 14+i*14 : (n.h/2 - (n.lines.length-1)*7 + i*14);
+    const fw = i===0 && n.type==='stream' ? 'bold' : 'normal';
+    svg += `<text x="${{n.w/2}}" y="${{ty}}" text-anchor="middle" font-size="${{fs}}" font-weight="${{fw}}">${{l}}</text>`;
+  }});
+  svg += `</g>`;
+}});
 
-const nodeTypes = {{ stream: StreamNode, unit: UnitNode, constraint: ConstraintNode }};
-const edgeOptions = {{ type: 'smoothstep', animated: false, style: {{ stroke: '#888', strokeWidth: 2 }} }};
-const styledEdges = edges.map(e => ({{ ...e, ...edgeOptions }}));
-
-const App = () => {{
-  return React.createElement(ReactFlowProvider, null,
-    React.createElement(ReactFlow, {{
-      nodes: nodes,
-      edges: styledEdges,
-      nodeTypes: nodeTypes,
-      fitView: true,
-      minZoom: 0.3,
-      maxZoom: 2,
-    }},
-      React.createElement(Background, null),
-      React.createElement(Controls, null),
-    )
-  );
-}};
-
-ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+svg += `</svg>`;
+document.getElementById('canvas').innerHTML = svg;
 </script>
 </body>
 </html>"""

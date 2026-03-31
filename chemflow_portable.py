@@ -914,6 +914,33 @@ td:nth-child(1), td:nth-child(2), td:nth-child(5) {{ text-align: left; }}
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
 
+    def export_reactflow(self, path: str, title: str | None = None, description: str | None = None) -> None:
+        """dagre + SVG によるインタラクティブフロー図を HTML として出力する。"""
+        # Mermaid HTMLと同じ情報をSVGで描画（dagre CDNのみ依存）
+        data = self.generate_json()
+        t = title or self.name
+        desc = description or ""
+        json_str = json.dumps(data, ensure_ascii=False)
+        html = f"""<!DOCTYPE html>
+<html lang="ja"><head><meta charset="UTF-8"><title>{t} - chemflow</title>
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<style>body{{margin:0;font-family:sans-serif;background:#f9f9f9}}#header{{padding:15px 30px;background:#fff;border-bottom:1px solid #ddd}}#header h1{{margin:0 0 4px;font-size:20px;color:#333}}#header p{{margin:0;font-size:13px;color:#666}}#canvas{{width:100%;overflow:auto;padding:20px}}.node-stream rect{{rx:6;ry:6;stroke-width:2}}.node-stream.fixed rect{{fill:#E3F2FD;stroke:#2196F3}}.node-stream.variable rect{{fill:#E8F5E9;stroke:#4CAF50}}.node-stream.zero rect{{fill:#F5F5F5;stroke:#9E9E9E}}.node-unit rect{{rx:16;ry:16;fill:#FFF3E0;stroke:#FF9800;stroke-width:2}}.node-constraint rect{{rx:4;ry:4;fill:#ffffcc;stroke:#cccc00;stroke-width:2}}.edge{{fill:none;stroke:#888;stroke-width:2;marker-end:url(#arrow)}}</style>
+</head><body><div id="header"><h1>{t}</h1><p>{desc}</p></div><div id="canvas"></div>
+<script>
+const D={json_str};const nodes={{}};const edges=[];const NW=170,NH=90,UW=140,UH=65,CW=200,CH=80;
+D.streams.forEach(s=>{{let c='variable';if(s.fixed&&Math.abs(s.total_mol)<1e-10)c='zero';else if(s.fixed)c='fixed';let l=[s.index+'. '+s.id];if(s.T_celsius!==null)l.push(s.T_celsius+'°C');if(s.P_input)l.push(s.P_input);if(s.phase)l.push(s.phase);if(s.fixed&&Math.abs(s.total_mol)>1e-10)l.push(s.total_mol.toFixed(2)+' mol/h, '+s.total_g.toFixed(0)+' g/h');else if(s.fixed)l.push('(0)');nodes[s.id]={{id:s.id,type:'stream',cls:c,lines:l,w:NW,h:NH}}}});
+D.units.forEach(u=>{{let l=[u.type];if(u.type==='MultiReactor')l=['Reactor',(u.reactions||[]).length+'反応','conv '+((u.conversion||0)*100).toFixed(0)+'%'];else if(u.type==='Reactor')l=['Reactor','conv '+((u.conversion||0)*100).toFixed(0)+'%'];else if(u.type==='GibbsReactor')l=['Gibbs',(u.T_celsius||'')+'°C'];else if(u.type==='Absorber')l=['Absorber',(u.stages||'')+'段 '+(u.T_celsius||'')+'°C'];else if(u.type==='Splitter (eq)'||u.type==='Splitter'){{const rs=(u.ratios||[]).map(r=>(r*100).toFixed(1)+'%').join(' / ');l=['Splitter',rs]}}else if(u.type==='WaterSeparator')l=['Water Sep'];nodes[u.id]={{id:u.id,type:'unit',cls:'',lines:l,w:UW,h:UH}};if(u.type==='Mixer'){{(u.sources||[]).forEach(s=>edges.push({{from:s,to:u.id}}));if(u.target)edges.push({{from:u.id,to:u.target}})}}else if(u.type==='Splitter (eq)'||u.type==='Splitter'){{if(u.source)edges.push({{from:u.source,to:u.id}});(u.targets||[]).forEach(t=>edges.push({{from:u.id,to:t}}))}}else if(u.type==='Absorber'){{if(u.gas_inlet)edges.push({{from:u.gas_inlet,to:u.id}});if(u.water_inlet)edges.push({{from:u.water_inlet,to:u.id}});if(u.gas_outlet)edges.push({{from:u.id,to:u.gas_outlet}});if(u.liquid_outlet)edges.push({{from:u.id,to:u.liquid_outlet}})}}else if(u.type==='WaterSeparator'){{if(u.source)edges.push({{from:u.source,to:u.id}});if(u.gas_outlet)edges.push({{from:u.id,to:u.gas_outlet}});if(u.water_outlet)edges.push({{from:u.id,to:u.water_outlet}})}}else{{if(u.source)edges.push({{from:u.source,to:u.id}});if(u.target)edges.push({{from:u.id,to:u.target}})}}}});
+const cL=(D.constraints||[]).filter(c=>c);if(cL.length)nodes['CONSTRAINTS']={{id:'CONSTRAINTS',type:'constraint',cls:'',lines:['Constraints:'].concat(cL),w:CW,h:20+cL.length*16}};
+const g=new dagre.graphlib.Graph();g.setGraph({{rankdir:'LR',nodesep:40,ranksep:70}});g.setDefaultEdgeLabel(()=>({{}}));Object.values(nodes).forEach(n=>g.setNode(n.id,{{width:n.w,height:n.h}}));edges.forEach(e=>g.setEdge(e.from,e.to));dagre.layout(g);Object.values(nodes).forEach(n=>{{const p=g.node(n.id);n.x=p.x;n.y=p.y}});
+const pad=40;let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;Object.values(nodes).forEach(n=>{{minX=Math.min(minX,n.x-n.w/2);minY=Math.min(minY,n.y-n.h/2);maxX=Math.max(maxX,n.x+n.w/2);maxY=Math.max(maxY,n.y+n.h/2)}});const svgW=maxX-minX+pad*2,svgH=maxY-minY+pad*2;
+let svg=`<svg xmlns="http://www.w3.org/2000/svg" width="${{svgW}}" height="${{svgH}}" viewBox="${{minX-pad}} ${{minY-pad}} ${{svgW}} ${{svgH}}">`;svg+=`<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#888"/></marker></defs>`;
+edges.forEach(e=>{{const f=nodes[e.from],t=nodes[e.to];if(!f||!t)return;const x1=f.x+f.w/2,y1=f.y,x2=t.x-t.w/2,y2=t.y,mx=(x1+x2)/2;svg+=`<path class="edge" d="M${{x1}},${{y1}} C${{mx}},${{y1}} ${{mx}},${{y2}} ${{x2}},${{y2}}"/>`}});
+Object.values(nodes).forEach(n=>{{const x=n.x-n.w/2,y=n.y-n.h/2,cls='node node-'+n.type+(n.cls?' '+n.cls:'');svg+=`<g class="${{cls}}" transform="translate(${{x}},${{y}})"><rect width="${{n.w}}" height="${{n.h}}"/>`;const fs=n.type==='unit'?11:(n.type==='constraint'?10:11);n.lines.forEach((l,i)=>{{const ty=n.type==='constraint'?14+i*14:(n.h/2-(n.lines.length-1)*7+i*14),fw=i===0&&n.type==='stream'?'bold':'normal';svg+=`<text x="${{n.w/2}}" y="${{ty}}" text-anchor="middle" font-size="${{fs}}" font-weight="${{fw}}">${{l}}</text>`}});svg+=`</g>`}});
+svg+=`</svg>`;document.getElementById('canvas').innerHTML=svg;
+</script></body></html>"""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)
+
 
 # ============================================================
 # Global Flowsheet
