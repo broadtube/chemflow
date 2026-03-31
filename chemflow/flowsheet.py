@@ -661,3 +661,314 @@ class Flowsheet:
 </html>"""
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
+
+    def generate_json(self) -> dict:
+        """Flowsheet を JSON シリアライズ可能な dict として出力する。"""
+        import json as json_mod
+        from chemflow.units import Mixer, Splitter, Reactor, MultiReactor, Absorber
+        from chemflow.gibbs import GibbsReactor
+
+        streams = list(self.streams)
+        if hasattr(self, "_stream_order") and self._stream_order:
+            name_map = {(s.name or f"S{i+1}"): s for i, s in enumerate(streams)}
+            ordered = [name_map[n] for n in self._stream_order if n in name_map]
+            remaining = [s for s in streams if s not in ordered]
+            streams = ordered + remaining
+
+        stream_id_map = {id(s): (s.name or f"S{i+1}") for i, s in enumerate(streams)}
+
+        def _sid(s):
+            return stream_id_map.get(id(s), "?")
+
+        # ストリーム
+        json_streams = []
+        for i, s in enumerate(streams):
+            sid = _sid(s)
+            comp_flows = {c.formula: round(float(s.molar_flows[j]), 6) for j, c in enumerate(s.components)}
+            entry = {
+                "id": sid, "name": s.name, "index": i + 1,
+                "T_celsius": getattr(s, "T_celsius", None),
+                "P_input": str(s.P_input) if getattr(s, "P_input", None) is not None else None,
+                "phase": getattr(s, "phase", None),
+                "fixed": s._fixed,
+                "total_mol": round(float(s.total_molar_flow), 4),
+                "total_NL": round(float(s.total_normal_volume_flow), 4),
+                "total_g": round(float(s.total_mass_flow), 4),
+                "components": comp_flows,
+            }
+            json_streams.append(entry)
+
+        # ユニット
+        json_units = []
+        unit_counter = 0
+        for unit in self.units:
+            unit_counter += 1
+            uid = f"U{unit_counter}"
+            entry = {"id": uid, "type": type(unit).__name__}
+
+            if isinstance(unit, Mixer):
+                is_eq = any(
+                    id(getattr(u2, attr, None)) == id(unit.outlet)
+                    for u2 in self.units if u2 is not unit
+                    for attr in ("outlet", "gas_outlet", "liquid_outlet", "water_outlet")
+                )
+                if is_eq:
+                    entry["type"] = "Splitter (eq)"
+                    total_out = unit.outlet.total_molar_flow
+                    ratios = []
+                    for inlet in unit.inlets:
+                        r = inlet.total_molar_flow / total_out if abs(total_out) > 1e-10 else 0
+                        ratios.append(round(r, 4))
+                    entry["source"] = _sid(unit.outlet)
+                    entry["targets"] = [_sid(s) for s in unit.inlets]
+                    entry["ratios"] = ratios
+                else:
+                    entry["sources"] = [_sid(s) for s in unit.inlets]
+                    entry["target"] = _sid(unit.outlet)
+
+            elif isinstance(unit, Splitter):
+                entry["source"] = _sid(unit.inlet)
+                entry["targets"] = [_sid(s) for s in unit.outlets]
+                entry["ratios"] = [round(float(r), 4) for r in unit.ratios]
+
+            elif isinstance(unit, MultiReactor):
+                entry["source"] = _sid(unit.inlet)
+                entry["target"] = _sid(unit.outlet)
+                entry["reactions"] = unit.reactions
+                entry["key"] = unit.key
+                entry["conversion"] = unit.conversion
+                entry["selectivities"] = unit.selectivities
+
+            elif isinstance(unit, Reactor):
+                entry["source"] = _sid(unit.inlet)
+                entry["target"] = _sid(unit.outlet)
+                entry["conversion"] = unit.conversion
+
+            elif isinstance(unit, GibbsReactor):
+                entry["source"] = _sid(unit.inlet)
+                entry["target"] = _sid(unit.outlet)
+                entry["T_celsius"] = unit.T_kelvin - 273.15
+                entry["P_pascal"] = unit.P_pascal
+                entry["species"] = unit.species
+
+            elif isinstance(unit, Absorber):
+                entry["gas_inlet"] = _sid(unit.gas_inlet)
+                entry["water_inlet"] = _sid(unit.water_inlet)
+                entry["gas_outlet"] = _sid(unit.gas_outlet)
+                entry["liquid_outlet"] = _sid(unit.liquid_outlet)
+                entry["T_celsius"] = unit.T_celsius
+                entry["stages"] = unit.stages
+
+            else:
+                if hasattr(unit, "inlet"):
+                    entry["source"] = _sid(unit.inlet)
+                if hasattr(unit, "gas_outlet"):
+                    entry["gas_outlet"] = _sid(unit.gas_outlet)
+                if hasattr(unit, "water_outlet"):
+                    entry["water_outlet"] = _sid(unit.water_outlet)
+
+            json_units.append(entry)
+
+        # 制約ラベル
+        labels = getattr(self, "_constraint_labels", [])
+
+        return {
+            "name": self.name,
+            "streams": json_streams,
+            "units": json_units,
+            "constraints": labels,
+            "component_order": getattr(self, "_component_order", None),
+            "stream_order": getattr(self, "_stream_order", None),
+        }
+
+    def export_json(self, path: str) -> None:
+        """Flowsheet を JSON ファイルとして出力する。"""
+        import json as json_mod
+        data = self.generate_json()
+        with open(path, "w", encoding="utf-8") as f:
+            json_mod.dump(data, f, indent=2, ensure_ascii=False)
+
+    def export_reactflow(self, path: str, title: str | None = None, description: str | None = None) -> None:
+        """ReactFlow によるインタラクティブフロー図を HTML として出力する。"""
+        import json as json_mod
+        data = self.generate_json()
+        t = title or self.name
+        desc = description or ""
+        json_str = json_mod.dumps(data, ensure_ascii=False)
+
+        html = f"""<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>{t} - chemflow ReactFlow</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@xyflow/react@12/dist/umd/index.js"></script>
+<link href="https://unpkg.com/@xyflow/react@12/dist/style.css" rel="stylesheet" />
+<script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+<style>
+  body {{ margin: 0; font-family: sans-serif; }}
+  #header {{ padding: 15px 30px; background: #f0f0f0; border-bottom: 1px solid #ccc; }}
+  #header h1 {{ margin: 0 0 5px 0; font-size: 20px; color: #333; }}
+  #header p {{ margin: 0; font-size: 13px; color: #666; }}
+  #root {{ width: 100vw; height: calc(100vh - 70px); }}
+  .stream-node {{ padding: 10px 14px; border-radius: 6px; border: 2px solid #555; background: white; font-size: 11px; min-width: 120px; }}
+  .stream-node.fixed {{ border-color: #2196F3; background: #E3F2FD; }}
+  .stream-node.variable {{ border-color: #4CAF50; background: #E8F5E9; }}
+  .stream-node.zero {{ border-color: #9E9E9E; background: #F5F5F5; }}
+  .stream-node .name {{ font-weight: bold; font-size: 13px; margin-bottom: 4px; }}
+  .stream-node .info {{ color: #666; }}
+  .unit-node {{ padding: 8px 12px; border-radius: 20px; border: 2px solid #FF9800; background: #FFF3E0; font-size: 11px; text-align: center; }}
+  .constraint-node {{ padding: 8px 12px; border-radius: 4px; border: 2px solid #cccc00; background: #ffffcc; font-size: 11px; white-space: pre-line; }}
+</style>
+</head>
+<body>
+<div id="header">
+  <h1>{t}</h1>
+  <p>{desc}</p>
+</div>
+<div id="root"></div>
+<script>
+const flowData = {json_str};
+
+const {{ ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position }} = window.XYFlow || window.ReactFlow || {{}};
+
+// Build nodes and edges from flowData
+const nodes = [];
+const edges = [];
+const nodeWidth = 160;
+const nodeHeight = 80;
+const unitWidth = 130;
+const unitHeight = 60;
+
+// Stream nodes
+flowData.streams.forEach((s, i) => {{
+  let cls = 'variable';
+  if (s.fixed && Math.abs(s.total_mol) < 1e-10) cls = 'zero';
+  else if (s.fixed) cls = 'fixed';
+  let info = [];
+  if (s.T_celsius !== null) info.push(s.T_celsius + '°C');
+  if (s.P_input) info.push(s.P_input);
+  if (s.phase) info.push(s.phase);
+  if (s.fixed && Math.abs(s.total_mol) > 1e-10) {{
+    info.push(s.total_mol.toFixed(2) + ' mol/h');
+    info.push(s.total_NL.toFixed(2) + ' NL/h');
+    info.push(s.total_g.toFixed(2) + ' g/h');
+  }} else if (s.fixed) {{
+    info.push('(0)');
+  }}
+  nodes.push({{
+    id: s.id,
+    type: 'stream',
+    data: {{ label: s.id, index: s.index, info: info.join(' | '), cls: cls }},
+    position: {{ x: 0, y: 0 }},
+  }});
+}});
+
+// Unit nodes + edges
+flowData.units.forEach((u) => {{
+  let label = u.type;
+  if (u.type === 'MultiReactor') label = 'Reactor\\n' + (u.reactions ? u.reactions.length + '反応' : '') + '\\nconv ' + ((u.conversion||0)*100).toFixed(0) + '%';
+  else if (u.type === 'Reactor') label = 'Reactor\\nconv ' + ((u.conversion||0)*100).toFixed(0) + '%';
+  else if (u.type === 'GibbsReactor') label = 'Gibbs\\n' + (u.T_celsius||'') + '°C';
+  else if (u.type === 'Absorber') label = 'Absorber\\n' + (u.stages||'') + '段 ' + (u.T_celsius||'') + '°C';
+  else if (u.type === 'Splitter (eq)') {{
+    const rs = (u.ratios||[]).map(r => (r*100).toFixed(1)+'%').join(' / ');
+    label = 'Splitter\\n' + rs;
+  }} else if (u.type === 'Splitter') {{
+    const rs = (u.ratios||[]).map(r => (r*100).toFixed(1)+'%').join(' / ');
+    label = 'Splitter\\n' + rs;
+  }}
+  nodes.push({{ id: u.id, type: 'unit', data: {{ label: label }}, position: {{ x:0, y:0 }} }});
+
+  // Edges
+  if (u.type === 'Mixer') {{
+    (u.sources||[]).forEach(s => edges.push({{ id: u.id+'_from_'+s, source: s, target: u.id }}));
+    if (u.target) edges.push({{ id: u.id+'_to_'+u.target, source: u.id, target: u.target }});
+  }} else if (u.type === 'Splitter (eq)' || u.type === 'Splitter') {{
+    if (u.source) edges.push({{ id: u.id+'_from_'+u.source, source: u.source, target: u.id }});
+    (u.targets||[]).forEach(t => edges.push({{ id: u.id+'_to_'+t, source: u.id, target: t }}));
+  }} else if (u.type === 'Absorber') {{
+    if (u.gas_inlet) edges.push({{ id: u.id+'_gi', source: u.gas_inlet, target: u.id }});
+    if (u.water_inlet) edges.push({{ id: u.id+'_wi', source: u.water_inlet, target: u.id }});
+    if (u.gas_outlet) edges.push({{ id: u.id+'_go', source: u.id, target: u.gas_outlet }});
+    if (u.liquid_outlet) edges.push({{ id: u.id+'_lo', source: u.id, target: u.liquid_outlet }});
+  }} else if (u.type === 'WaterSeparator') {{
+    if (u.source) edges.push({{ id: u.id+'_in', source: u.source, target: u.id }});
+    if (u.gas_outlet) edges.push({{ id: u.id+'_go', source: u.id, target: u.gas_outlet }});
+    if (u.water_outlet) edges.push({{ id: u.id+'_wo', source: u.id, target: u.water_outlet }});
+  }} else {{
+    if (u.source) edges.push({{ id: u.id+'_in', source: u.source, target: u.id }});
+    if (u.target) edges.push({{ id: u.id+'_out', source: u.id, target: u.target }});
+  }}
+}});
+
+// Constraints node
+if (flowData.constraints && flowData.constraints.length > 0) {{
+  nodes.push({{ id: 'CONSTRAINTS', type: 'constraint', data: {{ label: 'Constraints:\\n' + flowData.constraints.join('\\n') }}, position: {{ x:0, y:0 }} }});
+}}
+
+// Dagre layout
+const g = new dagre.graphlib.Graph();
+g.setGraph({{ rankdir: 'LR', nodesep: 50, ranksep: 80 }});
+g.setDefaultEdgeLabel(() => ({{}}));
+nodes.forEach(n => {{
+  const w = n.type === 'unit' ? unitWidth : (n.type === 'constraint' ? 180 : nodeWidth);
+  const h = n.type === 'unit' ? unitHeight : (n.type === 'constraint' ? 80 : nodeHeight);
+  g.setNode(n.id, {{ width: w, height: h }});
+}});
+edges.forEach(e => g.setEdge(e.source, e.target));
+dagre.layout(g);
+nodes.forEach(n => {{
+  const pos = g.node(n.id);
+  n.position = {{ x: pos.x - (pos.width||nodeWidth)/2, y: pos.y - (pos.height||nodeHeight)/2 }};
+}});
+
+// Custom node components
+const StreamNode = ({{ data }}) => {{
+  return React.createElement('div', {{ className: 'stream-node ' + data.cls }},
+    React.createElement(Handle, {{ type: 'target', position: Position.Left }}),
+    React.createElement('div', {{ className: 'name' }}, data.index + '. ' + data.label),
+    React.createElement('div', {{ className: 'info' }}, data.info),
+    React.createElement(Handle, {{ type: 'source', position: Position.Right }}),
+  );
+}};
+const UnitNode = ({{ data }}) => {{
+  return React.createElement('div', {{ className: 'unit-node' }},
+    React.createElement(Handle, {{ type: 'target', position: Position.Left }}),
+    React.createElement('div', null, data.label.replace(/\\\\n/g, '\\n').split('\\n').map((l,i) => React.createElement('div', {{key:i}}, l))),
+    React.createElement(Handle, {{ type: 'source', position: Position.Right }}),
+  );
+}};
+const ConstraintNode = ({{ data }}) => {{
+  return React.createElement('div', {{ className: 'constraint-node' }},
+    data.label.split('\\n').map((l,i) => React.createElement('div', {{key:i}}, l)),
+  );
+}};
+
+const nodeTypes = {{ stream: StreamNode, unit: UnitNode, constraint: ConstraintNode }};
+const edgeOptions = {{ type: 'smoothstep', animated: false, style: {{ stroke: '#888', strokeWidth: 2 }} }};
+const styledEdges = edges.map(e => ({{ ...e, ...edgeOptions }}));
+
+const App = () => {{
+  return React.createElement(ReactFlowProvider, null,
+    React.createElement(ReactFlow, {{
+      nodes: nodes,
+      edges: styledEdges,
+      nodeTypes: nodeTypes,
+      fitView: true,
+      minZoom: 0.3,
+      maxZoom: 2,
+    }},
+      React.createElement(Background, null),
+      React.createElement(Controls, null),
+    )
+  );
+}};
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+</script>
+</body>
+</html>"""
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(html)

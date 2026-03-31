@@ -2,7 +2,11 @@
 
 from chemflow.stream import Stream
 from chemflow.api import eq, constrain
-from chemflow.global_flowsheet import solve, reset, print_streams, set_component_order, set_stream_order, export_csv, export_excel, generate_mermaid, export_mermaid
+from chemflow.global_flowsheet import (
+    solve, reset, print_streams, set_component_order, set_stream_order,
+    export_csv, export_excel, generate_mermaid, export_mermaid,
+    generate_json, export_json, export_reactflow,
+)
 from chemflow.errors import (
     ChemflowError,
     FormulaError,
@@ -25,6 +29,9 @@ __all__ = [
     "export_excel",
     "generate_mermaid",
     "export_mermaid",
+    "generate_json",
+    "export_json",
+    "export_reactflow",
     "ChemflowError",
     "FormulaError",
     "BasisError",

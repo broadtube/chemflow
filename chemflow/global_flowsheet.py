@@ -62,3 +62,18 @@ def generate_mermaid() -> str:
 def export_mermaid(path: str, title: str | None = None, description: str | None = None) -> None:
     """Mermaid フロー図を HTML ファイルとして出力する。"""
     _get_flowsheet().export_mermaid(path, title=title, description=description)
+
+
+def generate_json() -> dict:
+    """Flowsheet を JSON dict として出力する。"""
+    return _get_flowsheet().generate_json()
+
+
+def export_json(path: str) -> None:
+    """Flowsheet を JSON ファイルとして出力する。"""
+    _get_flowsheet().export_json(path)
+
+
+def export_reactflow(path: str, title: str | None = None, description: str | None = None) -> None:
+    """ReactFlow によるインタラクティブフロー図を HTML として出力する。"""
+    _get_flowsheet().export_reactflow(path, title=title, description=description)

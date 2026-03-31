@@ -12,7 +12,8 @@ Mixed: total 500 NL/h 固定
 
 from chemflow import (
     Stream, eq, constrain, solve, reset, print_streams,
-    set_component_order, set_stream_order, export_csv, export_excel, export_mermaid,
+    set_component_order, set_stream_order,
+    export_csv, export_excel, export_mermaid, export_json, export_reactflow,
 )
 
 reset()
@@ -96,8 +97,16 @@ export_mermaid(
     title="Pattern 3: Multi-Reaction + Absorption",
     description="Syngas(vol%指定) → 3反応同時(CO conv 12%) → 10段吸収塔(25°C, 5MPaG, H2O 100g/h) → パージ率5%",
 )
+export_json("pattern3_data.json")
+export_reactflow(
+    "pattern3_reactflow.html",
+    title="Pattern 3: Multi-Reaction + Absorption",
+    description="Syngas(vol%指定) → 3反応同時(CO conv 12%) → 10段吸収塔(25°C, 5MPaG, H2O 100g/h) → パージ率5%",
+)
 print("\nCSV出力: pattern3_result.csv")
 print("フロー図: pattern3_flow.html")
+print("JSON出力: pattern3_data.json")
+print("ReactFlow: pattern3_reactflow.html")
 
 # Excel出力
 try:
