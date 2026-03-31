@@ -55,7 +55,7 @@ ReactOut.phase = "Gas"
 
 # 多段吸収塔 (25°C, 5MPaG, 10段, 水100g/h)
 Gas, WaterOut = ReactOut.absorb(
-    water_flow=100 / 18.015,  # 100 g/h → mol/h
+    water_flow=100,  # g/h（デフォルト water_basis="mass"）
     T=25, P="5MPaG",
     stages=10,
     name_gas="Gas", name_liquid="WaterOut", name_water="H2O_abs",

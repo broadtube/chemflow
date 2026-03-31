@@ -561,6 +561,7 @@ class Stream:
         T: float,
         P: float | str,
         stages: int = 10,
+        water_basis: str = "mass",
         name_gas: str | None = None,
         name_liquid: str | None = None,
         name_water: str | None = None,
@@ -571,13 +572,15 @@ class Stream:
         Parameters
         ----------
         water_flow : float
-            吸収水の流量 [mol/h]
+            吸収水の流量（デフォルト: g/h）
         T : float
             温度 [°C]
         P : float or str
             圧力 [Pa] or 文字列 ("3MPaG" 等)
         stages : int
             理論段数 (デフォルト: 10)
+        water_basis : str
+            水流量の単位 ("mass"=g/h, "mol"=mol/h, "normal_volume"=NL/h)
 
         Returns
         -------
@@ -589,13 +592,25 @@ class Stream:
 
         P_pascal = parse_pressure(P)
 
+        # 水流量を mol/h に変換
+        MW_WATER = 18.015
+        NV_WATER = 22.414
+        if water_basis == "mass":
+            water_flow_mol = water_flow / MW_WATER
+        elif water_basis == "normal_volume":
+            water_flow_mol = water_flow / NV_WATER
+        elif water_basis == "mol":
+            water_flow_mol = water_flow
+        else:
+            water_flow_mol = water_flow / MW_WATER  # デフォルト mass
+
         # ガス入口の全成分 + H2O
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
 
         # 水入口ストリーム（内部生成、固定）
-        water_inlet = Stream({"H2O": water_flow}, name=name_water)
+        water_inlet = Stream({"H2O": water_flow_mol}, name=name_water)
 
         # ガス出口
         gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)

@@ -807,9 +807,7 @@ class Flowsheet:
             if s._fixed:
                 total = s.total_molar_flow
                 if abs(total) > 1e-10:
-                    parts.append(f"{total:.2f} mol/h")
-                    parts.append(f"{s.total_normal_volume_flow:.2f} NL/h")
-                    parts.append(f"{s.total_mass_flow:.2f} g/h")
+                    parts.append(f"{s.total_mass_flow:.1f} g/h")
                 else:
                     parts.append("(0)")
             return "\\n".join(parts)
@@ -1448,12 +1446,18 @@ class Stream:
         ))
         return gas_outlet, water_outlet
 
-    def absorb(self, water_flow, T, P, stages=10, name_gas=None, name_liquid=None, name_water=None, henry_constants=None):
+    def absorb(self, water_flow, T, P, stages=10, water_basis="mass", name_gas=None, name_liquid=None, name_water=None, henry_constants=None):
         P_pascal = parse_pressure(P)
+        if water_basis == "mass":
+            water_flow_mol = water_flow / 18.015
+        elif water_basis == "normal_volume":
+            water_flow_mol = water_flow / 22.414
+        else:
+            water_flow_mol = water_flow
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
-        water_inlet = Stream({"H2O": water_flow}, name=name_water)
+        water_inlet = Stream({"H2O": water_flow_mol}, name=name_water)
         gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
         liquid_outlet = Stream(components=gas_formulas, name=name_liquid, _internal=True)
         _get_flowsheet().add_unit(Absorber(

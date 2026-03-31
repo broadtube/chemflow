@@ -474,11 +474,7 @@ class Flowsheet:
             if stream._fixed:
                 total = stream.total_molar_flow
                 if abs(total) > 1e-10:
-                    mass = stream.total_mass_flow
-                    nvol = stream.total_normal_volume_flow
-                    parts.append(f"{total:.2f} mol/h")
-                    parts.append(f"{nvol:.2f} NL/h")
-                    parts.append(f"{mass:.2f} g/h")
+                    parts.append(f"{stream.total_mass_flow:.1f} g/h")
                 else:
                     parts.append("(0)")
             return "\\n".join(parts)
