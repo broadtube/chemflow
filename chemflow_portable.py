@@ -864,7 +864,7 @@ class Flowsheet:
                 if hasattr(unit, "inlet"): lines.append(f"    {_sid(unit.inlet)} --> {uid}")
                 if hasattr(unit, "gas_outlet"): lines.append(f"    {uid} --> {_sid(unit.gas_outlet)}")
                 if hasattr(unit, "water_outlet"): lines.append(f"    {uid} --> {_sid(unit.water_outlet)}")
-        labels = getattr(self, "_constraint_labels", [])
+        labels = [l for l in getattr(self, "_constraint_labels", []) if l]
         if labels:
             lines.append("")
             lines.append('    CONSTRAINTS["Constraints:\\n' + "\\n".join(labels) + '"]')

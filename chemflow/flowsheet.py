@@ -580,7 +580,7 @@ class Flowsheet:
                     lines.append(f"    {uid} --> {_sid(unit.water_outlet)}")
 
         # 制約ラベルを注釈ノードとして追加
-        labels = getattr(self, "_constraint_labels", [])
+        labels = [l for l in getattr(self, "_constraint_labels", []) if l]
         if labels:
             lines.append("")
             lines.append('    CONSTRAINTS["Constraints:\\n' + "\\n".join(labels) + '"]')
