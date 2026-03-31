@@ -6,7 +6,7 @@ Mixed: total 500 NL/h 固定
     2CO + 2H2 → CH3COOH (選択率70%)
     2CO + 3H2 → CH3CHO + H2O (選択率20%)
     CO + 3H2 → CH4 + H2O (選択率10%)
-  25°C, 3MPaG で 10段吸収塔（水100g/h）
+  25°C, 5MPaG で 10段吸収塔（水100g/h）
   パージ率 5%（Purge = Gas * 0.05）
 """
 
@@ -26,13 +26,13 @@ Syngas_feed = Stream(
     name="Syngas_feed",
     T=25, P="0.1MPaG", phase="Gas",
 )
-H2_feed = Stream({"H2": 0}, name="H2_feed", T=25, P="3MPaG", phase="Gas")
-N2_feed = Stream({"N2": 0}, name="N2_feed", T=25, P="3MPaG", phase="Gas")
+H2_feed = Stream({"H2": 0}, name="H2_feed", T=25, P="5MPaG", phase="Gas")
+N2_feed = Stream({"N2": 0}, name="N2_feed", T=25, P="5MPaG", phase="Gas")
 Rx_Water_Feed = Stream({"H2O": 0}, name="Rx_Water_Feed", T=25, phase="Liquid")
 
 # 循環ストリーム
-Recycle = Stream(components=comps, name="Recycle", T=25, P="3MPaG", phase="Gas")
-Mixed = Stream(components=comps, name="Mixed", T=200, P="3MPaG", phase="Gas")
+Recycle = Stream(components=comps, name="Recycle", T=25, P="5MPaG", phase="Gas")
+Mixed = Stream(components=comps, name="Mixed", T=200, P="5MPaG", phase="Gas")
 
 eq(Mixed, Syngas_feed + H2_feed + N2_feed + Rx_Water_Feed + Recycle)
 
@@ -49,25 +49,25 @@ ReactOut = Mixed.multi_react(
 )
 ReactOut.name = "ReactOut"
 ReactOut.T_celsius = 280
-ReactOut.P_input = "3MPaG"
+ReactOut.P_input = "5MPaG"
 ReactOut.phase = "Gas"
 
-# 多段吸収塔 (25°C, 3MPaG, 10段, 水100g/h)
+# 多段吸収塔 (25°C, 5MPaG, 10段, 水100g/h)
 Gas, WaterOut = ReactOut.absorb(
     water_flow=100 / 18.015,  # 100 g/h → mol/h
-    T=25, P="3MPaG",
+    T=25, P="5MPaG",
     stages=10,
     name_gas="Gas", name_liquid="WaterOut", name_water="H2O_abs",
 )
 Gas.T_celsius = 25
-Gas.P_input = "3MPaG"
+Gas.P_input = "5MPaG"
 Gas.phase = "Gas"
 WaterOut.T_celsius = 25
-WaterOut.P_input = "3MPaG"
+WaterOut.P_input = "5MPaG"
 WaterOut.phase = "Liquid"
 
 # ガスの分割: パージ + 循環
-Purge = Stream(components=comps, name="Purge", T=25, P="3MPaG", phase="Gas")
+Purge = Stream(components=comps, name="Purge", T=25, P="5MPaG", phase="Gas")
 eq(Gas, Purge + Recycle)
 
 # 均一組成分割
@@ -94,15 +94,15 @@ export_csv("pattern3_result.csv")
 export_mermaid(
     "pattern3_flow.html",
     title="Pattern 3: Multi-Reaction + Absorption",
-    description="Syngas(vol%指定) → 3反応同時(CO conv 12%) → 10段吸収塔(25°C, 3MPaG, H2O 100g/h) → パージ率5%",
+    description="Syngas(vol%指定) → 3反応同時(CO conv 12%) → 10段吸収塔(25°C, 5MPaG, H2O 100g/h) → パージ率5%",
 )
 print("\nCSV出力: pattern3_result.csv")
 print("フロー図: pattern3_flow.html")
 
 # Excel出力
 try:
-    export_excel("output.xlsx", "Sheet1", "A1")
-    print("Excel出力: output.xlsx / Sheet1 / A1")
+    export_excel("output.xlsx", "Sheet2", "A15")
+    print("Excel出力: output.xlsx / Sheet2 / A15")
 except Exception as e:
     print(f"Excel出力スキップ: {e}")
 

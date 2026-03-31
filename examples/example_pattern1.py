@@ -66,8 +66,8 @@ print("\nCSV出力: pattern1_result.csv")
 print("フロー図: pattern1_flow.html")
 
 try:
-    export_excel("output.xlsx", "Sheet1", "A1")
-    print("Excel出力: output.xlsx / Sheet1 / A1")
+    export_excel("output.xlsx", "Sheet1", "A15")
+    print("Excel出力: output.xlsx / Sheet1 / A15")
 except Exception as e:
     print(f"Excel出力スキップ: {e}")
 
