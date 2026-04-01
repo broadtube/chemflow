@@ -184,7 +184,7 @@ def load_json(path: str) -> dict:
 
             g_out, l_out = gas_inlet.absorb(
                 water_flow=water_flow, T=T_c, P=P_str,
-                stages=stages,
+                stages=stages, water_basis="mol",
                 name_gas=gas_outlet_id, name_liquid=liquid_outlet_id,
                 name_water=water_inlet_id,
             )
