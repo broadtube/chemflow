@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>@xyflow/react v12 ESM (esm.sh) - Import Map版</title>
+  <!-- ReactFlow CSS (esm.shはCSSを配信しないのでjsdelivrから) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xyflow/react@12/dist/style.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+  <!-- Import Map: esm.sh で依存関係を統一 -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.3.1",
+      "react-dom/client": "https://esm.sh/react-dom@18.3.1/client",
+      "react/jsx-runtime": "https://esm.sh/react@18.3.1/jsx-runtime",
+      "@xyflow/react": "https://esm.sh/@xyflow/react@12?external=react,react-dom"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module">
+    import React, { useState, useCallback } from 'react';
+    import { createRoot } from 'react-dom/client';
+    import {
+      ReactFlow,
+      Background,
+      Controls,
+      MiniMap,
+      applyNodeChanges,
+      applyEdgeChanges,
+    } from '@xyflow/react';
+
+    const initialNodes = [
+      { id: '1', position: { x: 50, y: 50 }, data: { label: 'ノード 1' } },
+      { id: '2', position: { x: 250, y: 50 }, data: { label: 'ノード 2' } },
+      { id: '3', position: { x: 150, y: 200 }, data: { label: 'ノード 3' } },
+    ];
+
+    const initialEdges = [
+      { id: 'e1-2', source: '1', target: '2', animated: true },
+      { id: 'e1-3', source: '1', target: '3' },
+    ];
+
+    function FlowApp() {
+      const [nodes, setNodes] = useState(initialNodes);
+      const [edges, setEdges] = useState(initialEdges);
+
+      const onNodesChange = useCallback(
+        (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+        []
+      );
+      const onEdgesChange = useCallback(
+        (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+        []
+      );
+
+      // JSXが使えないのでReact.createElementで記述
+      const e = React.createElement;
+      return e(ReactFlow, {
+        nodes,
+        edges,
+        onNodesChange,
+        onEdgesChange,
+        fitView: true,
+      },
+        e(Background, { variant: 'dots', gap: 12, size: 1 }),
+        e(Controls, null),
+        e(MiniMap, null)
+      );
+    }
+
+    const root = createRoot(document.getElementById('root'));
+    root.render(React.createElement(FlowApp, null));
+  </script>
+</body>
+</html>

@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cytoscape.js CDN - インタラクティブフローグラフ</title>
+  <!-- Cytoscape.js: 依存関係なし、1ファイルで完結 -->
+  <script src="https://unpkg.com/cytoscape/dist/cytoscape.min.js"></script>
+  <!-- dagre レイアウト (階層的配置) -->
+  <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
+  <script src="https://unpkg.com/cytoscape-dagre@2.5.0/cytoscape-dagre.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #1a1a2e; color: #eee; }
+    #cy { width: 100%; height: calc(100vh - 50px); }
+    .toolbar {
+      height: 50px; display: flex; align-items: center; gap: 10px;
+      padding: 0 16px; background: #16213e;
+    }
+    .toolbar button {
+      padding: 6px 14px; border: 1px solid #0f3460; border-radius: 4px;
+      background: #0f3460; color: #e94560; cursor: pointer; font-size: 13px;
+    }
+    .toolbar button:hover { background: #e94560; color: #fff; }
+    .toolbar span { font-size: 13px; color: #999; margin-left: auto; }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="addNode()">+ ノード追加</button>
+    <button onclick="relayout('dagre')">階層レイアウト</button>
+    <button onclick="relayout('cose')">力指向レイアウト</button>
+    <button onclick="relayout('grid')">グリッド</button>
+    <button onclick="relayout('circle')">円形</button>
+    <button onclick="cy.fit()" >全体表示</button>
+    <span>ドラッグ: ノード移動 | スクロール: ズーム | 右ドラッグ: パン</span>
+  </div>
+  <div id="cy"></div>
+  <script>
+    // Dagre レイアウト登録
+    if (typeof cytoscape !== 'undefined' && typeof cytoscapeDagre !== 'undefined') {
+      cytoscape.use(cytoscapeDagre);
+    }
+
+    // 初期データ
+    const elements = [
+      // ノード
+      { data: { id: 'start', label: '開始' }, classes: 'start' },
+      { data: { id: 'process1', label: 'データ取得' } },
+      { data: { id: 'process2', label: 'データ加工' } },
+      { data: { id: 'decision', label: '条件分岐' }, classes: 'decision' },
+      { data: { id: 'process3', label: '処理A' } },
+      { data: { id: 'process4', label: '処理B' } },
+      { data: { id: 'end', label: '完了' }, classes: 'end' },
+      // エッジ
+      { data: { source: 'start', target: 'process1', label: '' } },
+      { data: { source: 'process1', target: 'process2', label: '' } },
+      { data: { source: 'process2', target: 'decision', label: '' } },
+      { data: { source: 'decision', target: 'process3', label: 'Yes' } },
+      { data: { source: 'decision', target: 'process4', label: 'No' } },
+      { data: { source: 'process3', target: 'end', label: '' } },
+      { data: { source: 'process4', target: 'end', label: '' } },
+    ];
+
+    // Cytoscape初期化
+    const cy = cytoscape({
+      container: document.getElementById('cy'),
+      elements: elements,
+      style: [
+        {
+          selector: 'node',
+          style: {
+            'label': 'data(label)',
+            'text-valign': 'center',
+            'text-halign': 'center',
+            'background-color': '#0f3460',
+            'color': '#eee',
+            'font-size': '14px',
+            'width': 120,
+            'height': 50,
+            'shape': 'roundrectangle',
+            'border-width': 2,
+            'border-color': '#e94560',
+            'text-wrap': 'wrap',
+            'text-max-width': '100px',
+          }
+        },
+        {
+          selector: 'node.start',
+          style: {
+            'background-color': '#2ecc71',
+            'border-color': '#27ae60',
+            'shape': 'ellipse',
+            'width': 80,
+            'height': 50,
+          }
+        },
+        {
+          selector: 'node.end',
+          style: {
+            'background-color': '#e74c3c',
+            'border-color': '#c0392b',
+            'shape': 'ellipse',
+            'width': 80,
+            'height': 50,
+          }
+        },
+        {
+          selector: 'node.decision',
+          style: {
+            'background-color': '#f39c12',
+            'border-color': '#e67e22',
+            'shape': 'diamond',
+            'width': 100,
+            'height': 80,
+          }
+        },
+        {
+          selector: 'node:selected',
+          style: {
+            'border-width': 4,
+            'border-color': '#fff',
+            'background-color': '#533483',
+          }
+        },
+        {
+          selector: 'edge',
+          style: {
+            'width': 2,
+            'line-color': '#e94560',
+            'target-arrow-color': '#e94560',
+            'target-arrow-shape': 'triangle',
+            'curve-style': 'bezier',
+            'label': 'data(label)',
+            'font-size': '12px',
+            'color': '#aaa',
+            'text-background-color': '#1a1a2e',
+            'text-background-opacity': 0.8,
+            'text-background-padding': '3px',
+          }
+        },
+        {
+          selector: 'edge:selected',
+          style: {
+            'width': 4,
+            'line-color': '#fff',
+            'target-arrow-color': '#fff',
+          }
+        },
+      ],
+      layout: {
+        name: 'dagre',
+        rankDir: 'TB',
+        nodeSep: 60,
+        rankSep: 80,
+      },
+      // インタラクション設定
+      userZoomingEnabled: true,
+      userPanningEnabled: true,
+      boxSelectionEnabled: true,
+    });
+
+    // ノード追加
+    let nodeCount = 7;
+    function addNode() {
+      nodeCount++;
+      const id = 'node' + nodeCount;
+      cy.add({
+        group: 'nodes',
+        data: { id: id, label: '新規ノード ' + nodeCount },
+        position: {
+          x: 100 + Math.random() * 400,
+          y: 100 + Math.random() * 400,
+        },
+      });
+    }
+
+    // レイアウト変更
+    function relayout(name) {
+      const options = { name: name, animate: true, animationDuration: 500 };
+      if (name === 'dagre') {
+        options.rankDir = 'TB';
+        options.nodeSep = 60;
+        options.rankSep = 80;
+      }
+      cy.layout(options).run();
+    }
+
+    // ノードクリックイベント
+    cy.on('tap', 'node', function(evt) {
+      console.log('タップされたノード:', evt.target.data('label'));
+    });
+  </script>
+</body>
+</html>

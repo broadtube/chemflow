@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReactFlow v11 + Babel Standalone (JSX直接記述)</title>
+  <!-- React 18 UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- ReactFlow v11 UMD -->
+  <script src="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/umd/index.js"></script>
+  <!-- Babel Standalone (ブラウザ内JSX変換) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <!-- ReactFlow CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/style.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <!--
+    type="text/babel" でBabel standaloneがブラウザ内でJSXを変換する。
+    注意: 開発・プロトタイプ用途のみ。本番環境では使わないこと。
+  -->
+  <script type="text/babel" data-type="module">
+    const {
+      default: ReactFlowComponent,
+      Background,
+      Controls,
+      MiniMap,
+      applyNodeChanges,
+      applyEdgeChanges,
+    } = window.ReactFlow;
+
+    const initialNodes = [
+      { id: '1', position: { x: 50, y: 50 }, data: { label: 'ノード 1' } },
+      { id: '2', position: { x: 250, y: 50 }, data: { label: 'ノード 2' } },
+      { id: '3', position: { x: 150, y: 200 }, data: { label: 'ノード 3' } },
+    ];
+
+    const initialEdges = [
+      { id: 'e1-2', source: '1', target: '2', animated: true },
+      { id: 'e1-3', source: '1', target: '3' },
+    ];
+
+    function FlowApp() {
+      const [nodes, setNodes] = React.useState(initialNodes);
+      const [edges, setEdges] = React.useState(initialEdges);
+
+      const onNodesChange = React.useCallback(
+        (changes) => setNodes((nds) => applyNodeChanges(changes, nds)),
+        []
+      );
+      const onEdgesChange = React.useCallback(
+        (changes) => setEdges((eds) => applyEdgeChanges(changes, eds)),
+        []
+      );
+
+      return (
+        <ReactFlowComponent
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          fitView
+        >
+          <Background variant="dots" gap={12} size={1} />
+          <Controls />
+          <MiniMap />
+        </ReactFlowComponent>
+      );
+    }
+
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<FlowApp />);
+  </script>
+</body>
+</html>

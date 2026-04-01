@@ -795,7 +795,7 @@ class Flowsheet:
             json_mod.dump(data, f, indent=2, ensure_ascii=False)
 
     def export_reactflow(self, path: str, title: str | None = None, description: str | None = None) -> None:
-        """dagre + SVG によるインタラクティブフロー図を HTML として出力する。"""
+        """ReactFlow v11 UMD + dagre によるインタラクティブフロー図を HTML として出力する。"""
         import json as json_mod
         data = self.generate_json()
         t = title or self.name
@@ -807,137 +807,126 @@ class Flowsheet:
 <head>
 <meta charset="UTF-8">
 <title>{t} - chemflow</title>
+<script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/umd/index.js"></script>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/style.css">
 <script src="https://unpkg.com/dagre@0.8.5/dist/dagre.min.js"></script>
 <style>
-  body {{ margin: 0; font-family: sans-serif; background: #f9f9f9; }}
-  #header {{ padding: 15px 30px; background: #fff; border-bottom: 1px solid #ddd; }}
-  #header h1 {{ margin: 0 0 4px 0; font-size: 20px; color: #333; }}
-  #header p {{ margin: 0; font-size: 13px; color: #666; }}
-  #canvas {{ width: 100%; overflow: auto; padding: 20px; }}
-  svg {{ cursor: grab; }}
-  svg:active {{ cursor: grabbing; }}
-  .node-stream rect {{ rx: 6; ry: 6; stroke-width: 2; }}
-  .node-stream.fixed rect {{ fill: #E3F2FD; stroke: #2196F3; }}
-  .node-stream.variable rect {{ fill: #E8F5E9; stroke: #4CAF50; }}
-  .node-stream.zero rect {{ fill: #F5F5F5; stroke: #9E9E9E; }}
-  .node-unit rect {{ rx: 16; ry: 16; fill: #FFF3E0; stroke: #FF9800; stroke-width: 2; }}
-  .node-constraint rect {{ rx: 4; ry: 4; fill: #ffffcc; stroke: #cccc00; stroke-width: 2; }}
-  .node text {{ font-family: sans-serif; }}
-  .edge {{ fill: none; stroke: #888; stroke-width: 2; marker-end: url(#arrow); }}
+  body {{ margin: 0; font-family: sans-serif; }}
+  #header {{ padding: 12px 24px; background: #f5f5f5; border-bottom: 1px solid #ddd; z-index: 10; position: relative; }}
+  #header h1 {{ margin: 0 0 3px 0; font-size: 18px; color: #333; }}
+  #header p {{ margin: 0; font-size: 12px; color: #666; }}
+  #root {{ width: 100vw; height: calc(100vh - 55px); }}
+  .cf-stream {{ padding: 8px 12px; border-radius: 6px; border: 2px solid #555; background: #fff; font-size: 11px; min-width: 110px; }}
+  .cf-stream.fixed {{ border-color: #1976D2; background: #E3F2FD; }}
+  .cf-stream.variable {{ border-color: #388E3C; background: #E8F5E9; }}
+  .cf-stream.zero {{ border-color: #9E9E9E; background: #F5F5F5; color: #999; }}
+  .cf-stream .sname {{ font-weight: bold; font-size: 12px; margin-bottom: 3px; }}
+  .cf-stream .sinfo {{ color: #555; font-size: 10px; line-height: 1.4; }}
+  .cf-unit {{ padding: 6px 10px; border-radius: 18px; border: 2px solid #F57C00; background: #FFF3E0; font-size: 11px; text-align: center; min-width: 90px; }}
+  .cf-constraint {{ padding: 6px 10px; border-radius: 4px; border: 2px dashed #999; background: #FFFDE7; font-size: 10px; }}
 </style>
 </head>
 <body>
-<div id="header">
-  <h1>{t}</h1>
-  <p>{desc}</p>
-</div>
-<div id="canvas"></div>
+<div id="header"><h1>{t}</h1><p>{desc}</p></div>
+<div id="root"></div>
 <script>
 const D = {json_str};
+const {{ default: RF, Background, Controls, MiniMap, Handle, Position, applyNodeChanges, applyEdgeChanges }} = window.ReactFlow;
+const {{ useState, useCallback }} = React;
+const e = React.createElement;
 
-// Build nodes and edges
-const nodes = {{}};
-const edges = [];
-const NW = 170, NH = 90, UW = 140, UH = 65, CW = 200, CH = 80;
+// --- Build nodes & edges from JSON ---
+const rfNodes = [];
+const rfEdges = [];
+const NW=170, NH=90, UW=140, UH=65;
 
 D.streams.forEach(s => {{
   let cls = 'variable';
   if (s.fixed && Math.abs(s.total_mol) < 1e-10) cls = 'zero';
   else if (s.fixed) cls = 'fixed';
-  let lines = [s.index + '. ' + s.id];
-  if (s.T_celsius !== null) lines.push(s.T_celsius + '°C');
-  if (s.P_input) lines.push(s.P_input);
-  if (s.phase) lines.push(s.phase);
-  if (s.fixed && Math.abs(s.total_mol) > 1e-10) lines.push(s.total_mol.toFixed(2)+' mol/h, '+s.total_g.toFixed(0)+' g/h');
-  else if (s.fixed) lines.push('(0)');
-  nodes[s.id] = {{ id: s.id, type: 'stream', cls, lines, w: NW, h: NH }};
+  let info = [];
+  if (s.T_celsius !== null) info.push(s.T_celsius + '°C');
+  if (s.P_input) info.push(s.P_input);
+  if (s.phase) info.push(s.phase);
+  if (s.fixed && Math.abs(s.total_mol) > 1e-10) info.push(s.total_g.toFixed(1) + ' g/h');
+  else if (s.fixed) info.push('(0)');
+  rfNodes.push({{ id: s.id, type: 'stream', position: {{x:0,y:0}},
+    data: {{ label: s.index+'. '+s.id, info: info.join(' | '), cls }} }});
 }});
 
 D.units.forEach(u => {{
   let lines = [u.type];
-  if (u.type==='MultiReactor') lines = ['Reactor', (u.reactions||[]).length+'反応', 'conv '+ ((u.conversion||0)*100).toFixed(0)+'%'];
-  else if (u.type==='Reactor') lines = ['Reactor', 'conv '+((u.conversion||0)*100).toFixed(0)+'%'];
-  else if (u.type==='GibbsReactor') lines = ['Gibbs', (u.T_celsius||'')+'°C'];
-  else if (u.type==='Absorber') lines = ['Absorber', (u.stages||'')+'段 '+(u.T_celsius||'')+'°C'];
-  else if (u.type==='Splitter (eq)'||u.type==='Splitter') {{
-    const rs = (u.ratios||[]).map(r=>(r*100).toFixed(1)+'%').join(' / ');
-    lines = ['Splitter', rs];
-  }} else if (u.type==='WaterSeparator') lines = ['Water Sep'];
-  nodes[u.id] = {{ id: u.id, type: 'unit', cls: '', lines, w: UW, h: UH }};
+  if (u.type==='MultiReactor') lines=['Reactor',(u.reactions||[]).length+'反応','conv '+((u.conversion||0)*100).toFixed(0)+'%'];
+  else if (u.type==='Reactor') lines=['Reactor','conv '+((u.conversion||0)*100).toFixed(0)+'%'];
+  else if (u.type==='GibbsReactor') lines=['Gibbs',(u.T_celsius||'')+'°C'];
+  else if (u.type==='Absorber') lines=['Absorber',(u.stages||'')+'段 '+(u.T_celsius||'')+'°C'];
+  else if (u.type==='Splitter (eq)'||u.type==='Splitter') lines=['Splitter',(u.ratios||[]).map(r=>(r*100).toFixed(1)+'%').join(' / ')];
+  else if (u.type==='WaterSeparator') lines=['Water Sep'];
+  rfNodes.push({{ id: u.id, type: 'unit', position: {{x:0,y:0}}, data: {{ lines }} }});
 
-  if (u.type==='Mixer') {{
-    (u.sources||[]).forEach(s => edges.push({{from:s,to:u.id}}));
-    if (u.target) edges.push({{from:u.id,to:u.target}});
-  }} else if (u.type==='Splitter (eq)'||u.type==='Splitter') {{
-    if (u.source) edges.push({{from:u.source,to:u.id}});
-    (u.targets||[]).forEach(t => edges.push({{from:u.id,to:t}}));
-  }} else if (u.type==='Absorber') {{
-    if (u.gas_inlet) edges.push({{from:u.gas_inlet,to:u.id}});
-    if (u.water_inlet) edges.push({{from:u.water_inlet,to:u.id}});
-    if (u.gas_outlet) edges.push({{from:u.id,to:u.gas_outlet}});
-    if (u.liquid_outlet) edges.push({{from:u.id,to:u.liquid_outlet}});
-  }} else if (u.type==='WaterSeparator') {{
-    if (u.source) edges.push({{from:u.source,to:u.id}});
-    if (u.gas_outlet) edges.push({{from:u.id,to:u.gas_outlet}});
-    if (u.water_outlet) edges.push({{from:u.id,to:u.water_outlet}});
-  }} else {{
-    if (u.source) edges.push({{from:u.source,to:u.id}});
-    if (u.target) edges.push({{from:u.id,to:u.target}});
-  }}
+  const addE = (from, to) => rfEdges.push({{ id: from+'_'+to, source: from, target: to, type: 'smoothstep', style: {{ strokeWidth: 2 }} }});
+  if (u.type==='Mixer') {{ (u.sources||[]).forEach(s=>addE(s,u.id)); if(u.target) addE(u.id,u.target); }}
+  else if (u.type==='Splitter (eq)'||u.type==='Splitter') {{ if(u.source) addE(u.source,u.id); (u.targets||[]).forEach(t=>addE(u.id,t)); }}
+  else if (u.type==='Absorber') {{ if(u.gas_inlet) addE(u.gas_inlet,u.id); if(u.water_inlet) addE(u.water_inlet,u.id); if(u.gas_outlet) addE(u.id,u.gas_outlet); if(u.liquid_outlet) addE(u.id,u.liquid_outlet); }}
+  else if (u.type==='WaterSeparator') {{ if(u.source) addE(u.source,u.id); if(u.gas_outlet) addE(u.id,u.gas_outlet); if(u.water_outlet) addE(u.id,u.water_outlet); }}
+  else {{ if(u.source) addE(u.source,u.id); if(u.target) addE(u.id,u.target); }}
 }});
 
-const cLabels = (D.constraints||[]).filter(c=>c);
-if (cLabels.length) {{
-  nodes['CONSTRAINTS'] = {{ id:'CONSTRAINTS', type:'constraint', cls:'', lines:['Constraints:'].concat(cLabels), w:CW, h:20+cLabels.length*16 }};
+const cL = (D.constraints||[]).filter(c=>c);
+if (cL.length) rfNodes.push({{ id:'CONSTRAINTS', type:'constraint', position:{{x:0,y:0}}, data:{{ lines: ['Constraints:'].concat(cL) }} }});
+
+// --- Dagre layout ---
+const g = new dagre.graphlib.Graph();
+g.setGraph({{ rankdir:'LR', nodesep:45, ranksep:80 }});
+g.setDefaultEdgeLabel(()=>({{}}));
+rfNodes.forEach(n => {{
+  const w = n.type==='unit'? UW : (n.type==='constraint'? 190 : NW);
+  const h = n.type==='unit'? UH : (n.type==='constraint'? 20+(n.data.lines||[]).length*15 : NH);
+  g.setNode(n.id, {{width:w, height:h}});
+}});
+rfEdges.forEach(ed => g.setEdge(ed.source, ed.target));
+dagre.layout(g);
+rfNodes.forEach(n => {{ const p=g.node(n.id); n.position = {{ x: p.x-p.width/2, y: p.y-p.height/2 }}; }});
+
+// --- Custom node components ---
+function StreamNode({{ data }}) {{
+  return e('div', {{ className: 'cf-stream ' + data.cls }},
+    e(Handle, {{ type:'target', position: Position.Left, style:{{background:'#555'}} }}),
+    e('div', {{ className:'sname' }}, data.label),
+    e('div', {{ className:'sinfo' }}, data.info),
+    e(Handle, {{ type:'source', position: Position.Right, style:{{background:'#555'}} }})
+  );
+}}
+function UnitNode({{ data }}) {{
+  return e('div', {{ className: 'cf-unit' }},
+    e(Handle, {{ type:'target', position: Position.Left, style:{{background:'#F57C00'}} }}),
+    ...(data.lines||[]).map((l,i) => e('div', {{ key:i, style:{{ fontWeight: i===0?'bold':'normal' }} }}, l)),
+    e(Handle, {{ type:'source', position: Position.Right, style:{{background:'#F57C00'}} }})
+  );
+}}
+function ConstraintNode({{ data }}) {{
+  return e('div', {{ className: 'cf-constraint' }},
+    ...(data.lines||[]).map((l,i) => e('div', {{ key:i, style:{{ fontWeight: i===0?'bold':'normal' }} }}, l))
+  );
 }}
 
-// Dagre layout
-const g = new dagre.graphlib.Graph();
-g.setGraph({{ rankdir:'LR', nodesep:40, ranksep:70 }});
-g.setDefaultEdgeLabel(()=>({{}}));
-Object.values(nodes).forEach(n => g.setNode(n.id, {{width:n.w, height:n.h}}));
-edges.forEach(e => g.setEdge(e.from, e.to));
-dagre.layout(g);
-Object.values(nodes).forEach(n => {{ const p=g.node(n.id); n.x=p.x; n.y=p.y; }});
+const nodeTypes = {{ stream: StreamNode, unit: UnitNode, constraint: ConstraintNode }};
 
-// SVG rendering
-const pad = 40;
-let minX=Infinity,minY=Infinity,maxX=-Infinity,maxY=-Infinity;
-Object.values(nodes).forEach(n => {{
-  minX=Math.min(minX,n.x-n.w/2); minY=Math.min(minY,n.y-n.h/2);
-  maxX=Math.max(maxX,n.x+n.w/2); maxY=Math.max(maxY,n.y+n.h/2);
-}});
-const svgW=maxX-minX+pad*2, svgH=maxY-minY+pad*2;
-
-let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${{svgW}}" height="${{svgH}}" viewBox="${{minX-pad}} ${{minY-pad}} ${{svgW}} ${{svgH}}">`;
-svg += `<defs><marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#888"/></marker></defs>`;
-
-// Draw edges
-edges.forEach(e => {{
-  const f=nodes[e.from], t=nodes[e.to];
-  if(!f||!t) return;
-  const x1=f.x+f.w/2, y1=f.y, x2=t.x-t.w/2, y2=t.y;
-  const mx=(x1+x2)/2;
-  svg += `<path class="edge" d="M${{x1}},${{y1}} C${{mx}},${{y1}} ${{mx}},${{y2}} ${{x2}},${{y2}}"/>`;
-}});
-
-// Draw nodes
-Object.values(nodes).forEach(n => {{
-  const x=n.x-n.w/2, y=n.y-n.h/2;
-  const cls = 'node node-'+n.type+(n.cls?' '+n.cls:'');
-  svg += `<g class="${{cls}}" transform="translate(${{x}},${{y}})">`;
-  svg += `<rect width="${{n.w}}" height="${{n.h}}"/>`;
-  const fs = n.type==='unit' ? 11 : (n.type==='constraint' ? 10 : 11);
-  n.lines.forEach((l,i) => {{
-    const ty = n.type==='constraint' ? 14+i*14 : (n.h/2 - (n.lines.length-1)*7 + i*14);
-    const fw = i===0 && n.type==='stream' ? 'bold' : 'normal';
-    svg += `<text x="${{n.w/2}}" y="${{ty}}" text-anchor="middle" font-size="${{fs}}" font-weight="${{fw}}">${{l}}</text>`;
-  }});
-  svg += `</g>`;
-}});
-
-svg += `</svg>`;
-document.getElementById('canvas').innerHTML = svg;
+// --- App ---
+function App() {{
+  const [nodes, setNodes] = useState(rfNodes);
+  const [edges, setEdges] = useState(rfEdges);
+  const onNodesChange = useCallback(ch => setNodes(nds => applyNodeChanges(ch, nds)), []);
+  const onEdgesChange = useCallback(ch => setEdges(eds => applyEdgeChanges(ch, eds)), []);
+  return e(RF, {{ nodes, edges, onNodesChange, onEdgesChange, nodeTypes, fitView: true, minZoom: 0.2, maxZoom: 3 }},
+    e(Background, {{ variant:'dots', gap:16, size:1 }}),
+    e(Controls, null),
+    e(MiniMap, {{ nodeStrokeWidth:3, zoomable:true, pannable:true }})
+  );
+}}
+ReactDOM.createRoot(document.getElementById('root')).render(e(App));
 </script>
 </body>
 </html>"""

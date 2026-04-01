@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ReactFlow v11 UMD (CDN) - React.createElement版</title>
+  <!-- React 18 UMD -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <!-- ReactFlow v11 UMD (jsx-runtime不要!) -->
+  <script src="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/umd/index.js"></script>
+  <!-- ReactFlow CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reactflow@11.11.4/dist/style.css">
+  <style>
+    body { margin: 0; font-family: sans-serif; }
+    #root { width: 100vw; height: 100vh; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    // ReactFlow v11 UMDはグローバル変数 window.ReactFlow にエクスポートされる
+    const { default: ReactFlowComponent, Background, Controls, MiniMap } = window.ReactFlow;
+    const { useState, useCallback } = React;
+    const e = React.createElement;
+
+    // 初期ノード
+    const initialNodes = [
+      { id: '1', position: { x: 50, y: 50 }, data: { label: 'ノード 1' }, type: 'default' },
+      { id: '2', position: { x: 250, y: 50 }, data: { label: 'ノード 2' }, type: 'default' },
+      { id: '3', position: { x: 150, y: 200 }, data: { label: 'ノード 3' }, type: 'default' },
+    ];
+
+    // 初期エッジ
+    const initialEdges = [
+      { id: 'e1-2', source: '1', target: '2', animated: true },
+      { id: 'e1-3', source: '1', target: '3' },
+    ];
+
+    // メインコンポーネント (React.createElement で記述)
+    function FlowApp() {
+      const [nodes, setNodes] = useState(initialNodes);
+      const [edges, setEdges] = useState(initialEdges);
+
+      const onNodesChange = useCallback(
+        (changes) => setNodes((nds) => window.ReactFlow.applyNodeChanges(changes, nds)),
+        []
+      );
+      const onEdgesChange = useCallback(
+        (changes) => setEdges((eds) => window.ReactFlow.applyEdgeChanges(changes, eds)),
+        []
+      );
+
+      return e(ReactFlowComponent, {
+        nodes: nodes,
+        edges: edges,
+        onNodesChange: onNodesChange,
+        onEdgesChange: onEdgesChange,
+        fitView: true,
+      },
+        e(Background, { variant: 'dots', gap: 12, size: 1 }),
+        e(Controls, null),
+        e(MiniMap, null)
+      );
+    }
+
+    // レンダリング
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(e(FlowApp, null));
+  </script>
+</body>
+</html>

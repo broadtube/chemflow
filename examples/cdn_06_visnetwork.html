@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>vis-network CDN - インタラクティブフローグラフ</title>
+  <!-- vis-network: スタンドアロンUMDビルド (依存関係なし) -->
+  <script src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f5f5f5; }
+    .toolbar {
+      height: 50px; display: flex; align-items: center; gap: 10px;
+      padding: 0 16px; background: #2c3e50; color: #ecf0f1;
+    }
+    .toolbar button {
+      padding: 6px 14px; border: none; border-radius: 4px;
+      background: #3498db; color: #fff; cursor: pointer; font-size: 13px;
+    }
+    .toolbar button:hover { background: #2980b9; }
+    .toolbar span { font-size: 12px; color: #bdc3c7; margin-left: auto; }
+    #network { width: 100%; height: calc(100vh - 50px); }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button onclick="addNode()">+ ノード追加</button>
+    <button onclick="togglePhysics()">物理演算 ON/OFF</button>
+    <button onclick="setLayout('hierarchical')">階層レイアウト</button>
+    <button onclick="setLayout('free')">自由配置</button>
+    <button onclick="network.fit()">全体表示</button>
+    <span>ドラッグ: ノード移動 | スクロール: ズーム | 背景ドラッグ: パン</span>
+  </div>
+  <div id="network"></div>
+  <script>
+    // ノードデータ
+    const nodes = new vis.DataSet([
+      { id: 1, label: '開始', color: { background: '#2ecc71', border: '#27ae60' }, shape: 'ellipse', font: { color: '#fff' } },
+      { id: 2, label: 'データ取得', color: { background: '#3498db', border: '#2980b9' }, font: { color: '#fff' } },
+      { id: 3, label: 'データ加工', color: { background: '#3498db', border: '#2980b9' }, font: { color: '#fff' } },
+      { id: 4, label: '条件分岐', color: { background: '#f39c12', border: '#e67e22' }, shape: 'diamond', font: { color: '#fff' } },
+      { id: 5, label: '処理A', color: { background: '#9b59b6', border: '#8e44ad' }, font: { color: '#fff' } },
+      { id: 6, label: '処理B', color: { background: '#9b59b6', border: '#8e44ad' }, font: { color: '#fff' } },
+      { id: 7, label: '完了', color: { background: '#e74c3c', border: '#c0392b' }, shape: 'ellipse', font: { color: '#fff' } },
+    ]);
+
+    // エッジデータ
+    const edges = new vis.DataSet([
+      { from: 1, to: 2, arrows: 'to' },
+      { from: 2, to: 3, arrows: 'to' },
+      { from: 3, to: 4, arrows: 'to' },
+      { from: 4, to: 5, arrows: 'to', label: 'Yes', font: { align: 'top' } },
+      { from: 4, to: 6, arrows: 'to', label: 'No', font: { align: 'top' } },
+      { from: 5, to: 7, arrows: 'to' },
+      { from: 6, to: 7, arrows: 'to' },
+    ]);
+
+    // ネットワークオプション
+    const options = {
+      nodes: {
+        shape: 'box',
+        borderWidth: 2,
+        shadow: true,
+        font: { size: 14 },
+        widthConstraint: { minimum: 100, maximum: 150 },
+      },
+      edges: {
+        color: { color: '#2c3e50', highlight: '#e74c3c' },
+        width: 2,
+        smooth: { type: 'cubicBezier', forceDirection: 'vertical' },
+        font: { size: 12, color: '#666' },
+      },
+      layout: {
+        hierarchical: {
+          direction: 'UD',
+          sortMethod: 'directed',
+          levelSeparation: 100,
+          nodeSpacing: 150,
+        }
+      },
+      physics: {
+        hierarchicalRepulsion: {
+          centralGravity: 0.0,
+          springLength: 120,
+          springConstant: 0.01,
+          nodeDistance: 160,
+        },
+      },
+      interaction: {
+        dragNodes: true,
+        dragView: true,
+        zoomView: true,
+        hover: true,
+        tooltipDelay: 200,
+      },
+    };
+
+    // ネットワーク初期化
+    const container = document.getElementById('network');
+    const data = { nodes: nodes, edges: edges };
+    const network = new vis.Network(container, data, options);
+
+    // ノード追加
+    let nodeCount = 7;
+    function addNode() {
+      nodeCount++;
+      const id = nodeCount;
+      nodes.add({
+        id: id,
+        label: '新規ノード ' + id,
+        color: { background: '#1abc9c', border: '#16a085' },
+        font: { color: '#fff' },
+      });
+    }
+
+    // 物理演算トグル
+    let physicsEnabled = true;
+    function togglePhysics() {
+      physicsEnabled = !physicsEnabled;
+      network.setOptions({ physics: { enabled: physicsEnabled } });
+    }
+
+    // レイアウト切り替え
+    function setLayout(type) {
+      if (type === 'hierarchical') {
+        network.setOptions({
+          layout: {
+            hierarchical: {
+              enabled: true,
+              direction: 'UD',
+              sortMethod: 'directed',
+              levelSeparation: 100,
+              nodeSpacing: 150,
+            }
+          }
+        });
+      } else {
+        network.setOptions({
+          layout: { hierarchical: { enabled: false } }
+        });
+      }
+    }
+
+    // クリックイベント
+    network.on('click', function(params) {
+      if (params.nodes.length > 0) {
+        const nodeId = params.nodes[0];
+        const node = nodes.get(nodeId);
+        console.log('クリックされたノード:', node.label);
+      }
+    });
+  </script>
+</body>
+</html>
