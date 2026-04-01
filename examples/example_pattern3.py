@@ -58,14 +58,9 @@ Gas, WaterOut = ReactOut.absorb(
     water_flow=100,  # g/h（デフォルト water_basis="mass"）
     T=25, P="5MPaG",
     stages=10,
+    water_T=25, water_P="5MPaG", water_phase="Liquid",
     name_gas="Gas", name_liquid="WaterOut", name_water="H2O_abs",
 )
-# H2O_abs の属性設定（absorb内部生成ストリーム）
-from chemflow.global_flowsheet import _get_flowsheet
-for _s in _get_flowsheet().streams:
-    if _s.name == "H2O_abs":
-        _s.T_celsius = 25; _s.P_input = "5MPaG"; _s.phase = "Liquid"
-        break
 Gas.T_celsius = 25
 Gas.P_input = "5MPaG"
 Gas.phase = "Gas"

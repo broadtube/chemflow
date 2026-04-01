@@ -912,6 +912,71 @@ td:nth-child(1), td:nth-child(2), td:nth-child(5) {{ text-align: left; }}
         with open(path, "w", encoding="utf-8") as f:
             f.write(html)
 
+    def generate_json(self) -> dict:
+        streams = list(self.streams)
+        if hasattr(self, "_stream_order") and self._stream_order:
+            nm = {(s.name or f"S{i+1}"): s for i, s in enumerate(streams)}
+            ordered = [nm[n] for n in self._stream_order if n in nm]
+            remaining = [s for s in streams if s not in ordered]
+            streams = ordered + remaining
+        sid_map = {id(s): (s.name or f"S{i+1}") for i, s in enumerate(streams)}
+        def _sid(s): return sid_map.get(id(s), "?")
+        json_streams = []
+        for i, s in enumerate(streams):
+            cf = {c.formula: round(float(s.molar_flows[j]), 6) for j, c in enumerate(s.components)}
+            json_streams.append({"id": _sid(s), "name": s.name, "index": i+1,
+                "T_celsius": getattr(s,"T_celsius",None), "P_input": str(s.P_input) if getattr(s,"P_input",None) else None,
+                "phase": getattr(s,"phase",None), "fixed": s._fixed,
+                "total_mol": round(float(s.total_molar_flow),4), "total_NL": round(float(s.total_normal_volume_flow),4),
+                "total_g": round(float(s.total_mass_flow),4), "components": cf,
+                "original_components": sorted(s._original_formulas) if getattr(s,"_original_formulas",None) else None,
+                "has_composition_constraints": len(getattr(s,"_composition_constraints",[])) > 0})
+        json_units = []
+        uc = 0
+        for unit in self.units:
+            uc += 1; uid = f"U{uc}"; e = {"id": uid, "type": type(unit).__name__}
+            if isinstance(unit, Mixer):
+                is_eq = any(id(getattr(u2,a,None))==id(unit.outlet) for u2 in self.units if u2 is not unit for a in ("outlet","gas_outlet","liquid_outlet","water_outlet"))
+                if is_eq:
+                    e["type"] = "Splitter (eq)"
+                    t = unit.outlet.total_molar_flow
+                    e["source"] = _sid(unit.outlet)
+                    e["targets"] = [_sid(s) for s in unit.inlets]
+                    e["ratios"] = [round(s.total_molar_flow/t,4) if abs(t)>1e-10 else 0 for s in unit.inlets]
+                else:
+                    e["sources"] = [_sid(s) for s in unit.inlets]; e["target"] = _sid(unit.outlet)
+            elif isinstance(unit, Splitter):
+                e["source"] = _sid(unit.inlet); e["targets"] = [_sid(s) for s in unit.outlets]
+                e["ratios"] = [round(float(r),4) for r in unit.ratios]
+            elif isinstance(unit, MultiReactor):
+                e["source"]=_sid(unit.inlet); e["target"]=_sid(unit.outlet)
+                e["reactions"]=unit.reactions; e["key"]=unit.key; e["conversion"]=unit.conversion; e["selectivities"]=unit.selectivities
+            elif isinstance(unit, Reactor):
+                e["source"]=_sid(unit.inlet); e["target"]=_sid(unit.outlet); e["conversion"]=unit.conversion
+            elif isinstance(unit, GibbsReactor):
+                e["source"]=_sid(unit.inlet); e["target"]=_sid(unit.outlet)
+                e["T_celsius"]=unit.T_kelvin-273.15; e["P_pascal"]=unit.P_pascal; e["species"]=unit.species
+            elif isinstance(unit, Absorber):
+                e["gas_inlet"]=_sid(unit.gas_inlet); e["water_inlet"]=_sid(unit.water_inlet)
+                e["gas_outlet"]=_sid(unit.gas_outlet); e["liquid_outlet"]=_sid(unit.liquid_outlet)
+                e["T_celsius"]=unit.T_celsius; e["stages"]=unit.stages
+            else:
+                if hasattr(unit,"inlet"): e["source"]=_sid(unit.inlet)
+                if hasattr(unit,"gas_outlet"): e["gas_outlet"]=_sid(unit.gas_outlet)
+                if hasattr(unit,"water_outlet"): e["water_outlet"]=_sid(unit.water_outlet)
+            json_units.append(e)
+        labels = getattr(self,"_constraint_labels",[])
+        codes = getattr(self,"_constraint_codes",[])
+        cs = [{"label": labels[i] if i<len(labels) else "", "code": codes[i] if i<len(codes) else ""} for i in range(max(len(labels),len(codes)))]
+        return {"name": self.name, "streams": json_streams, "units": json_units,
+                "constraints": [c["label"] for c in cs if c["label"]], "constraint_specs": cs,
+                "component_order": getattr(self,"_component_order",None), "stream_order": getattr(self,"_stream_order",None)}
+
+    def export_json(self, path: str) -> None:
+        data = self.generate_json()
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
     def export_reactflow(self, path: str, title: str | None = None, description: str | None = None) -> None:
         """dagre + SVG によるインタラクティブフロー図を HTML として出力する。"""
         # Mermaid HTMLと同じ情報をSVGで描画（dagre CDNのみ依存）
@@ -999,6 +1064,21 @@ def generate_mermaid() -> str:
 def export_mermaid(path: str, title: str | None = None, description: str | None = None) -> None:
     """Mermaid フロー図を HTML ファイルとして出力する。"""
     _get_flowsheet().export_mermaid(path, title=title, description=description)
+
+
+def export_reactflow(path: str, title: str | None = None, description: str | None = None) -> None:
+    """dagre+SVG フロー図を HTML ファイルとして出力する。"""
+    _get_flowsheet().export_reactflow(path, title=title, description=description)
+
+
+def generate_json() -> dict:
+    """Flowsheet を JSON dict として出力する。"""
+    return _get_flowsheet().generate_json()
+
+
+def export_json(path: str) -> None:
+    """Flowsheet を JSON ファイルとして出力する。"""
+    _get_flowsheet().export_json(path)
 
 
 # ============================================================
@@ -1446,7 +1526,7 @@ class Stream:
         ))
         return gas_outlet, water_outlet
 
-    def absorb(self, water_flow, T, P, stages=10, water_basis="mass", name_gas=None, name_liquid=None, name_water=None, henry_constants=None):
+    def absorb(self, water_flow, T, P, stages=10, water_basis="mass", water_T=None, water_P=None, water_phase="Liquid", name_gas=None, name_liquid=None, name_water=None, henry_constants=None):
         P_pascal = parse_pressure(P)
         if water_basis == "mass":
             water_flow_mol = water_flow / 18.015
@@ -1457,7 +1537,7 @@ class Stream:
         gas_formulas = [c.formula for c in self.components]
         if "H2O" not in gas_formulas:
             gas_formulas.append("H2O")
-        water_inlet = Stream({"H2O": water_flow_mol}, name=name_water)
+        water_inlet = Stream({"H2O": water_flow_mol}, name=name_water, T=water_T, P=water_P, phase=water_phase)
         gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
         liquid_outlet = Stream(components=gas_formulas, name=name_liquid, _internal=True)
         _get_flowsheet().add_unit(Absorber(

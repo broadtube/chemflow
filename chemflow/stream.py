@@ -562,6 +562,9 @@ class Stream:
         P: float | str,
         stages: int = 10,
         water_basis: str = "mass",
+        water_T: float | None = None,
+        water_P: float | str | None = None,
+        water_phase: str | None = "Liquid",
         name_gas: str | None = None,
         name_liquid: str | None = None,
         name_water: str | None = None,
@@ -610,7 +613,8 @@ class Stream:
             gas_formulas.append("H2O")
 
         # 水入口ストリーム（内部生成、固定）
-        water_inlet = Stream({"H2O": water_flow_mol}, name=name_water)
+        water_inlet = Stream({"H2O": water_flow_mol}, name=name_water,
+                             T=water_T, P=water_P, phase=water_phase)
 
         # ガス出口
         gas_outlet = Stream(components=gas_formulas, name=name_gas, _internal=True)
