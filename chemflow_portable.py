@@ -1577,11 +1577,13 @@ def eq(target: Stream, expression) -> None:
         _get_flowsheet().add_spec(residual)
 
 
-def constrain(residual_func: Callable, label: str | None = None) -> None:
-    """任意制約: constrain(lambda: C.total_molar_flow - 30, "Mixed = 30 mol/h")"""
+def constrain(residual_func: Callable, label: str | None = None, code: str | None = None) -> None:
+    """任意制約: constrain(lambda: C.total_molar_flow - 30, "Mixed = 30 mol/h", code="lambda: Mixed.total_molar_flow - 30")"""
     fs = _get_flowsheet()
     fs.add_spec(lambda: np.atleast_1d(residual_func()))
-    if label is not None:
-        if not hasattr(fs, "_constraint_labels"):
-            fs._constraint_labels = []
-        fs._constraint_labels.append(label)
+    if not hasattr(fs, "_constraint_labels"):
+        fs._constraint_labels = []
+    if not hasattr(fs, "_constraint_codes"):
+        fs._constraint_codes = []
+    fs._constraint_labels.append(label or "")
+    fs._constraint_codes.append(code or "")
