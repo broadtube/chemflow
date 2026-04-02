@@ -986,9 +986,7 @@ function showDetail(nodeId) {{
     content.innerHTML = h;
   }} else if (u) {{
     let h = '<h3>' + u.type + ' (' + u.id + ')</h3>';
-    // ユニットも編集可能にする
     h += '<button onclick="openUnitEdit(\\'' + u.id + '\\')" style="padding:4px 12px;font-size:11px;background:#FF9800;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-bottom:8px">Edit</button>';
-    let h = '<h3>' + u.type + ' (' + u.id + ')</h3>';
     h += '<pre style="font-size:10px;background:#f5f5f5;padding:8px;border-radius:4px;overflow:auto">' + JSON.stringify(u, null, 2) + '</pre>';
     content.innerHTML = h;
   }} else if (nodeId === 'CONSTRAINTS') {{
@@ -1086,6 +1084,19 @@ function saveEdit() {{
 
 // --- Context Menu ---
 let ctxPos = {{x:0, y:0}};
+document.addEventListener('contextmenu', (ev) => {{
+  if (ev.target.closest('.react-flow')) {{
+    ev.preventDefault();
+    ctxPos = {{x: ev.clientX, y: ev.clientY}};
+    const menu = document.getElementById('ctx-menu');
+    menu.style.left = ev.clientX + 'px';
+    menu.style.top = ev.clientY + 'px';
+    menu.innerHTML = '<div onclick="addStream()">+ Stream</div><div onclick="addUnit(\\'Mixer\\')">+ Mixer</div><div onclick="addUnit(\\'Reactor\\')">+ Reactor</div><div onclick="addUnit(\\'MultiReactor\\')">+ MultiReactor</div><div onclick="addUnit(\\'Absorber\\')">+ Absorber</div><div onclick="addUnit(\\'GibbsReactor\\')">+ GibbsReactor</div><div onclick="addConstraint()">+ Constraint</div><hr style="margin:2px 0"><div onclick="hideCtx()">Cancel</div>';
+    menu.style.display = 'block';
+  }}
+}});
+document.addEventListener('click', () => {{ document.getElementById('ctx-menu').style.display = 'none'; }});
+function hideCtx() {{ document.getElementById('ctx-menu').style.display = 'none'; }}
 
 // --- Unit Edit ---
 function openUnitEdit(uid) {{
@@ -1125,22 +1136,6 @@ function saveUnitEdit(uid) {{
   closeEdit();
   showDetail(uid);
 }}
-
-// --- Context Menu ---
-let ctxPos = {{x:0, y:0}};
-document.addEventListener('contextmenu', (ev) => {{
-  if (ev.target.closest('.react-flow')) {{
-    ev.preventDefault();
-    ctxPos = {{x: ev.clientX, y: ev.clientY}};
-    const menu = document.getElementById('ctx-menu');
-    menu.style.left = ev.clientX + 'px';
-    menu.style.top = ev.clientY + 'px';
-    menu.innerHTML = '<div onclick="addStream()">+ Stream</div><div onclick="addUnit(\\'Mixer\\')">+ Mixer</div><div onclick="addUnit(\\'Reactor\\')">+ Reactor</div><div onclick="addUnit(\\'MultiReactor\\')">+ MultiReactor</div><div onclick="addUnit(\\'Absorber\\')">+ Absorber</div><div onclick="addUnit(\\'GibbsReactor\\')">+ GibbsReactor</div><div onclick="addConstraint()">+ Constraint</div><hr style="margin:2px 0"><div onclick="hideCtx()">Cancel</div>';
-    menu.style.display = 'block';
-  }}
-}});
-document.addEventListener('click', () => {{ document.getElementById('ctx-menu').style.display = 'none'; }});
-function hideCtx() {{ document.getElementById('ctx-menu').style.display = 'none'; }}
 
 function _addRfNode(id, type, data, w, h) {{
   rfNodes.push({{ id, type, position: {{ x: ctxPos.x - 200, y: ctxPos.y - 100 }}, data }});
