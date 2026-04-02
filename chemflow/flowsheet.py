@@ -836,6 +836,22 @@ class Flowsheet:
   #toolbar {{ position: absolute; bottom: 12px; right: 12px; z-index: 15; }}
   #toolbar button {{ padding: 6px 14px; font-size: 12px; background: #1976D2; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-left: 6px; }}
   #toolbar button:hover {{ background: #1565C0; }}
+  #edit-modal {{ display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:100; }}
+  #edit-modal.open {{ display:flex; justify-content:center; align-items:center; }}
+  #edit-box {{ background:#fff; border-radius:8px; padding:20px; min-width:400px; max-width:600px; max-height:80vh; overflow-y:auto; box-shadow:0 4px 20px rgba(0,0,0,0.3); }}
+  #edit-box h3 {{ margin:0 0 12px; }}
+  #edit-box label {{ display:block; margin:6px 0 2px; font-size:12px; color:#555; }}
+  #edit-box input, #edit-box select {{ width:100%; padding:4px 8px; font-size:12px; border:1px solid #ccc; border-radius:3px; box-sizing:border-box; }}
+  #edit-box .comp-row {{ display:flex; gap:8px; align-items:center; margin:2px 0; }}
+  #edit-box .comp-row input {{ flex:1; }}
+  #edit-box .comp-row span {{ width:60px; font-size:11px; }}
+  #edit-box .btn-row {{ margin-top:12px; text-align:right; }}
+  #edit-box button {{ padding:6px 16px; font-size:12px; border:none; border-radius:4px; cursor:pointer; margin-left:6px; }}
+  #edit-box .btn-save {{ background:#388E3C; color:#fff; }}
+  #edit-box .btn-cancel {{ background:#999; color:#fff; }}
+  #ctx-menu {{ display:none; position:fixed; background:#fff; border:1px solid #ccc; border-radius:4px; box-shadow:0 2px 8px rgba(0,0,0,0.15); z-index:50; font-size:12px; }}
+  #ctx-menu div {{ padding:6px 16px; cursor:pointer; }}
+  #ctx-menu div:hover {{ background:#E3F2FD; }}
 </style>
 </head>
 <body>
@@ -844,8 +860,11 @@ class Flowsheet:
 <div id="detail"><span class="close" onclick="this.parentElement.classList.remove('open')">&times;</span><div id="detail-content"></div></div>
 <div id="toolbar">
   <button onclick="exportJSON()">Export JSON</button>
+  <button onclick="exportModified()">Export Modified JSON</button>
   <button onclick="exportLayout()">Export Layout</button>
 </div>
+<div id="edit-modal" onclick="if(event.target===this)closeEdit()"><div id="edit-box"></div></div>
+<div id="ctx-menu"></div>
 <script>
 const D = {json_str};
 const {{ default: RF, Background, Controls, MiniMap, Handle, Position, applyNodeChanges, applyEdgeChanges }} = window.ReactFlow;
@@ -959,6 +978,7 @@ function showDetail(nodeId) {{
       }}
     }}
     h += '</table>';
+    h += '<div style="margin-top:10px"><button onclick="openEdit(\\'' + nodeId + '\\')" style="padding:4px 12px;font-size:11px;background:#FF9800;color:#fff;border:none;border-radius:3px;cursor:pointer">Edit</button></div>';
     content.innerHTML = h;
   }} else if (u) {{
     let h = '<h3>' + u.type + ' (' + u.id + ')</h3>';
@@ -981,6 +1001,14 @@ function exportJSON() {{
   URL.revokeObjectURL(url);
 }}
 
+function exportModified() {{
+  // ストリームの編集結果を反映した JSON
+  const blob = new Blob([JSON.stringify(D, null, 2)], {{ type: 'application/json' }});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'flowsheet_modified.json'; a.click();
+  URL.revokeObjectURL(url);
+}}
+
 function exportLayout() {{
   const layoutData = {{ ...D, _layout: {{}} }};
   currentNodes.forEach(n => {{ layoutData._layout[n.id] = n.position; }});
@@ -990,11 +1018,103 @@ function exportLayout() {{
   URL.revokeObjectURL(url);
 }}
 
+// --- Edit Modal ---
+let editingId = null;
+
+function openEdit(sid) {{
+  const s = streamMap[sid];
+  if (!s) return;
+  editingId = sid;
+  const box = document.getElementById('edit-box');
+  let h = '<h3>Edit: ' + s.id + '</h3>';
+  h += '<label>Name</label><input id="ed-name" value="' + (s.name||s.id) + '">';
+  h += '<label>T (°C)</label><input id="ed-T" type="number" step="any" value="' + (s.T_celsius!==null?s.T_celsius:'') + '">';
+  h += '<label>P</label><input id="ed-P" value="' + (s.P_input||'') + '">';
+  h += '<label>Phase</label><select id="ed-phase"><option value="">-</option><option value="Gas"'+(s.phase==='Gas'?' selected':'')+'>Gas</option><option value="Liquid"'+(s.phase==='Liquid'?' selected':'')+'>Liquid</option><option value="Mixed"'+(s.phase==='Mixed'?' selected':'')+'>Mixed</option></select>';
+  h += '<label>Components (mol/h)</label>';
+  const comps = s.components || {{}};
+  for (const [k,v] of Object.entries(comps)) {{
+    h += '<div class="comp-row"><span>' + k + '</span><input class="ed-comp" data-comp="'+k+'" type="number" step="any" value="' + v + '"></div>';
+  }}
+  h += '<div class="comp-row"><span>Add:</span><input id="ed-new-comp" placeholder="formula" style="flex:0.5"><input id="ed-new-val" type="number" step="any" value="0" style="flex:0.5"><button onclick="addComp()" style="flex:0.3;background:#1976D2;color:#fff;border:none;border-radius:3px;padding:3px 8px;cursor:pointer">+</button></div>';
+  h += '<div class="btn-row"><button class="btn-cancel" onclick="closeEdit()">Cancel</button><button class="btn-save" onclick="saveEdit()">Save</button></div>';
+  box.innerHTML = h;
+  document.getElementById('edit-modal').classList.add('open');
+}}
+
+function addComp() {{
+  const f = document.getElementById('ed-new-comp').value.trim();
+  const v = parseFloat(document.getElementById('ed-new-val').value) || 0;
+  if (!f) return;
+  const s = streamMap[editingId];
+  if (!s) return;
+  s.components[f] = v;
+  openEdit(editingId); // refresh
+}}
+
+function closeEdit() {{
+  document.getElementById('edit-modal').classList.remove('open');
+  editingId = null;
+}}
+
+function saveEdit() {{
+  const s = streamMap[editingId];
+  if (!s) return;
+  s.name = document.getElementById('ed-name').value;
+  const tVal = document.getElementById('ed-T').value;
+  s.T_celsius = tVal !== '' ? parseFloat(tVal) : null;
+  s.P_input = document.getElementById('ed-P').value || null;
+  s.phase = document.getElementById('ed-phase').value || null;
+  document.querySelectorAll('.ed-comp').forEach(inp => {{
+    s.components[inp.dataset.comp] = parseFloat(inp.value) || 0;
+  }});
+  // Recalc totals
+  let tm=0, tg=0, tv=0;
+  for (const [k,v] of Object.entries(s.components)) {{ tm += v; }}
+  s.total_mol = tm;
+  // Update D.streams
+  closeEdit();
+  showDetail(editingId);
+}}
+
+// --- Context Menu ---
+let ctxPos = {{x:0, y:0}};
+
+document.addEventListener('contextmenu', (ev) => {{
+  if (ev.target.closest('.react-flow')) {{
+    ev.preventDefault();
+    ctxPos = {{x: ev.clientX, y: ev.clientY}};
+    const menu = document.getElementById('ctx-menu');
+    menu.style.left = ev.clientX + 'px';
+    menu.style.top = ev.clientY + 'px';
+    menu.innerHTML = '<div onclick="addStream()">+ Add Stream</div><div onclick="hideCtx()">Cancel</div>';
+    menu.style.display = 'block';
+  }}
+}});
+document.addEventListener('click', () => {{ document.getElementById('ctx-menu').style.display = 'none'; }});
+
+function hideCtx() {{ document.getElementById('ctx-menu').style.display = 'none'; }}
+
+function addStream() {{
+  hideCtx();
+  const id = 'New_' + (D.streams.length + 1);
+  const ns = {{ id, name: id, index: D.streams.length+1, T_celsius: 25, P_input: null, phase: 'Gas', fixed: true, total_mol: 0, total_NL: 0, total_g: 0, components: {{}}, original_components: null, has_composition_constraints: false }};
+  D.streams.push(ns);
+  streamMap[id] = ns;
+  // Add to ReactFlow
+  rfNodes.push({{ id, type: 'stream', position: {{ x: ctxPos.x - 200, y: ctxPos.y - 100 }}, data: {{ label: ns.index + '. ' + id, info: '25°C | Gas | (new)', cls: 'zero' }} }});
+  // Trigger re-render (hacky but works with useState)
+  window.__setNodes && window.__setNodes([...rfNodes]);
+  openEdit(id);
+}}
+
 let currentNodes = rfNodes;
 
 function App() {{
   const [nodes, setNodes] = useState(rfNodes);
   const [edges, setEdges] = useState(rfEdges);
+  window.__setNodes = setNodes;
+  window.__setEdges = setEdges;
   const onNodesChange = useCallback(ch => {{
     setNodes(nds => {{ const updated = applyNodeChanges(ch, nds); currentNodes = updated; return updated; }});
   }}, []);
