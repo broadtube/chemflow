@@ -826,11 +826,26 @@ class Flowsheet:
   .cf-stream .sinfo {{ color: #555; font-size: 10px; line-height: 1.4; }}
   .cf-unit {{ padding: 6px 10px; border-radius: 18px; border: 2px solid #F57C00; background: #FFF3E0; font-size: 11px; text-align: center; min-width: 90px; }}
   .cf-constraint {{ padding: 6px 10px; border-radius: 4px; border: 2px dashed #999; background: #FFFDE7; font-size: 10px; }}
+  #detail {{ position: fixed; top: 55px; right: 0; width: 320px; height: calc(100vh - 55px); background: #fff; border-left: 1px solid #ddd; overflow-y: auto; padding: 16px; font-size: 12px; box-shadow: -2px 0 8px rgba(0,0,0,0.1); display: none; z-index: 20; }}
+  #detail.open {{ display: block; }}
+  #detail h3 {{ margin: 0 0 8px; font-size: 15px; }}
+  #detail .close {{ position: absolute; top: 8px; right: 12px; cursor: pointer; font-size: 18px; color: #999; }}
+  #detail table {{ width: 100%; border-collapse: collapse; margin-top: 8px; }}
+  #detail th, #detail td {{ border: 1px solid #eee; padding: 3px 6px; text-align: right; font-size: 11px; }}
+  #detail th {{ background: #f5f5f5; text-align: left; }}
+  #toolbar {{ position: absolute; bottom: 12px; right: 12px; z-index: 15; }}
+  #toolbar button {{ padding: 6px 14px; font-size: 12px; background: #1976D2; color: #fff; border: none; border-radius: 4px; cursor: pointer; margin-left: 6px; }}
+  #toolbar button:hover {{ background: #1565C0; }}
 </style>
 </head>
 <body>
 <div id="header"><h1>{t}</h1><p>{desc}</p></div>
 <div id="root"></div>
+<div id="detail"><span class="close" onclick="this.parentElement.classList.remove('open')">&times;</span><div id="detail-content"></div></div>
+<div id="toolbar">
+  <button onclick="exportJSON()">Export JSON</button>
+  <button onclick="exportLayout()">Export Layout</button>
+</div>
 <script>
 const D = {json_str};
 const {{ default: RF, Background, Controls, MiniMap, Handle, Position, applyNodeChanges, applyEdgeChanges }} = window.ReactFlow;
@@ -915,12 +930,77 @@ function ConstraintNode({{ data }}) {{
 const nodeTypes = {{ stream: StreamNode, unit: UnitNode, constraint: ConstraintNode }};
 
 // --- App ---
+// --- Stream lookup ---
+const streamMap = {{}};
+D.streams.forEach(s => {{ streamMap[s.id] = s; }});
+const unitMap = {{}};
+D.units.forEach(u => {{ unitMap[u.id] = u; }});
+
+function showDetail(nodeId) {{
+  const panel = document.getElementById('detail');
+  const content = document.getElementById('detail-content');
+  const s = streamMap[nodeId];
+  const u = unitMap[nodeId];
+  if (s) {{
+    let h = '<h3>' + s.index + '. ' + s.id + '</h3>';
+    h += '<div style="color:#666;margin-bottom:8px">';
+    if (s.T_celsius !== null) h += s.T_celsius + '°C | ';
+    if (s.P_input) h += s.P_input + ' | ';
+    if (s.phase) h += s.phase;
+    h += '</div>';
+    h += '<div>Fixed: ' + (s.fixed ? 'Yes' : 'No') + '</div>';
+    h += '<div>Total: ' + s.total_mol.toFixed(4) + ' mol/h | ' + s.total_NL.toFixed(2) + ' NL/h | ' + s.total_g.toFixed(2) + ' g/h</div>';
+    h += '<table><tr><th>Component</th><th>mol/h</th><th>mol%</th></tr>';
+    const comps = s.components || {{}};
+    const total = s.total_mol || 1;
+    for (const [k, v] of Object.entries(comps)) {{
+      if (Math.abs(v) > 1e-8) {{
+        h += '<tr><td style="text-align:left">' + k + '</td><td>' + v.toFixed(4) + '</td><td>' + (v/total*100).toFixed(2) + '%</td></tr>';
+      }}
+    }}
+    h += '</table>';
+    content.innerHTML = h;
+  }} else if (u) {{
+    let h = '<h3>' + u.type + ' (' + u.id + ')</h3>';
+    h += '<pre style="font-size:10px;background:#f5f5f5;padding:8px;border-radius:4px;overflow:auto">' + JSON.stringify(u, null, 2) + '</pre>';
+    content.innerHTML = h;
+  }} else if (nodeId === 'CONSTRAINTS') {{
+    let h = '<h3>Constraints</h3>';
+    (D.constraints||[]).forEach(c => {{ h += '<div>• ' + c + '</div>'; }});
+    content.innerHTML = h;
+  }} else {{
+    return;
+  }}
+  panel.classList.add('open');
+}}
+
+function exportJSON() {{
+  const blob = new Blob([JSON.stringify(D, null, 2)], {{ type: 'application/json' }});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'flowsheet.json'; a.click();
+  URL.revokeObjectURL(url);
+}}
+
+function exportLayout() {{
+  const layoutData = {{ ...D, _layout: {{}} }};
+  currentNodes.forEach(n => {{ layoutData._layout[n.id] = n.position; }});
+  const blob = new Blob([JSON.stringify(layoutData, null, 2)], {{ type: 'application/json' }});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'flowsheet_layout.json'; a.click();
+  URL.revokeObjectURL(url);
+}}
+
+let currentNodes = rfNodes;
+
 function App() {{
   const [nodes, setNodes] = useState(rfNodes);
   const [edges, setEdges] = useState(rfEdges);
-  const onNodesChange = useCallback(ch => setNodes(nds => applyNodeChanges(ch, nds)), []);
+  const onNodesChange = useCallback(ch => {{
+    setNodes(nds => {{ const updated = applyNodeChanges(ch, nds); currentNodes = updated; return updated; }});
+  }}, []);
   const onEdgesChange = useCallback(ch => setEdges(eds => applyEdgeChanges(ch, eds)), []);
-  return e(RF, {{ nodes, edges, onNodesChange, onEdgesChange, nodeTypes, fitView: true, minZoom: 0.2, maxZoom: 3 }},
+  const onNodeClick = useCallback((ev, node) => showDetail(node.id), []);
+  return e(RF, {{ nodes, edges, onNodesChange, onEdgesChange, onNodeClick, nodeTypes, fitView: true, minZoom: 0.2, maxZoom: 3 }},
     e(Background, {{ variant:'dots', gap:16, size:1 }}),
     e(Controls, null),
     e(MiniMap, {{ nodeStrokeWidth:3, zoomable:true, pannable:true }})
