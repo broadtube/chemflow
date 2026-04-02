@@ -5,7 +5,7 @@ from chemflow.api import eq, constrain
 from chemflow.global_flowsheet import (
     solve, reset, print_streams, set_component_order, set_stream_order,
     export_csv, export_excel, generate_mermaid, export_mermaid,
-    generate_json, export_json, export_reactflow, load_json,
+    generate_json, export_json, export_reactflow, load_json, export_empty_reactflow,
 )
 from chemflow.errors import (
     ChemflowError,
@@ -33,6 +33,7 @@ __all__ = [
     "export_json",
     "export_reactflow",
     "load_json",
+    "export_empty_reactflow",
     "ChemflowError",
     "FormulaError",
     "BasisError",

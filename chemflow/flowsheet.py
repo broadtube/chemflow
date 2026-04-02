@@ -978,9 +978,16 @@ function showDetail(nodeId) {{
       }}
     }}
     h += '</table>';
-    h += '<div style="margin-top:10px"><button onclick="openEdit(\\'' + nodeId + '\\')" style="padding:4px 12px;font-size:11px;background:#FF9800;color:#fff;border:none;border-radius:3px;cursor:pointer">Edit</button></div>';
+    if (s.fixed) {{
+      h += '<div style="margin-top:10px"><button onclick="openEdit(\\'' + nodeId + '\\')" style="padding:4px 12px;font-size:11px;background:#FF9800;color:#fff;border:none;border-radius:3px;cursor:pointer">Edit</button></div>';
+    }} else {{
+      h += '<div style="margin-top:8px;color:#888;font-size:10px;font-style:italic">Calculated value (edit fixed streams or constraints to change)</div>';
+    }}
     content.innerHTML = h;
   }} else if (u) {{
+    let h = '<h3>' + u.type + ' (' + u.id + ')</h3>';
+    // ユニットも編集可能にする
+    h += '<button onclick="openUnitEdit(\\'' + u.id + '\\')" style="padding:4px 12px;font-size:11px;background:#FF9800;color:#fff;border:none;border-radius:3px;cursor:pointer;margin-bottom:8px">Edit</button>';
     let h = '<h3>' + u.type + ' (' + u.id + ')</h3>';
     h += '<pre style="font-size:10px;background:#f5f5f5;padding:8px;border-radius:4px;overflow:auto">' + JSON.stringify(u, null, 2) + '</pre>';
     content.innerHTML = h;
@@ -1080,6 +1087,47 @@ function saveEdit() {{
 // --- Context Menu ---
 let ctxPos = {{x:0, y:0}};
 
+// --- Unit Edit ---
+function openUnitEdit(uid) {{
+  const u = unitMap[uid];
+  if (!u) return;
+  const box = document.getElementById('edit-box');
+  let h = '<h3>Edit: ' + u.type + ' (' + uid + ')</h3>';
+  if (u.conversion !== undefined) {{
+    h += '<label>Conversion</label><input id="ued-conv" type="number" step="0.01" value="' + u.conversion + '">';
+  }}
+  if (u.stages !== undefined) {{
+    h += '<label>Stages</label><input id="ued-stages" type="number" value="' + u.stages + '">';
+  }}
+  if (u.T_celsius !== undefined) {{
+    h += '<label>T (°C)</label><input id="ued-T" type="number" step="any" value="' + u.T_celsius + '">';
+  }}
+  if (u.selectivities) {{
+    u.selectivities.forEach((s,i) => {{
+      h += '<label>Selectivity ' + (i+1) + '</label><input class="ued-sel" type="number" step="0.01" value="' + s + '">';
+    }});
+  }}
+  h += '<div class="btn-row"><button class="btn-cancel" onclick="closeEdit()">Cancel</button><button class="btn-save" onclick="saveUnitEdit(\\''+uid+'\\')">Save</button></div>';
+  box.innerHTML = h;
+  document.getElementById('edit-modal').classList.add('open');
+}}
+function saveUnitEdit(uid) {{
+  const u = unitMap[uid];
+  if (!u) return;
+  const cv = document.getElementById('ued-conv');
+  if (cv) u.conversion = parseFloat(cv.value);
+  const st = document.getElementById('ued-stages');
+  if (st) u.stages = parseInt(st.value);
+  const ut = document.getElementById('ued-T');
+  if (ut) u.T_celsius = parseFloat(ut.value);
+  const sels = document.querySelectorAll('.ued-sel');
+  if (sels.length && u.selectivities) sels.forEach((el,i) => {{ u.selectivities[i] = parseFloat(el.value); }});
+  closeEdit();
+  showDetail(uid);
+}}
+
+// --- Context Menu ---
+let ctxPos = {{x:0, y:0}};
 document.addEventListener('contextmenu', (ev) => {{
   if (ev.target.closest('.react-flow')) {{
     ev.preventDefault();
@@ -1087,26 +1135,64 @@ document.addEventListener('contextmenu', (ev) => {{
     const menu = document.getElementById('ctx-menu');
     menu.style.left = ev.clientX + 'px';
     menu.style.top = ev.clientY + 'px';
-    menu.innerHTML = '<div onclick="addStream()">+ Add Stream</div><div onclick="hideCtx()">Cancel</div>';
+    menu.innerHTML = '<div onclick="addStream()">+ Stream</div><div onclick="addUnit(\\'Mixer\\')">+ Mixer</div><div onclick="addUnit(\\'Reactor\\')">+ Reactor</div><div onclick="addUnit(\\'MultiReactor\\')">+ MultiReactor</div><div onclick="addUnit(\\'Absorber\\')">+ Absorber</div><div onclick="addUnit(\\'GibbsReactor\\')">+ GibbsReactor</div><div onclick="addConstraint()">+ Constraint</div><hr style="margin:2px 0"><div onclick="hideCtx()">Cancel</div>';
     menu.style.display = 'block';
   }}
 }});
 document.addEventListener('click', () => {{ document.getElementById('ctx-menu').style.display = 'none'; }});
-
 function hideCtx() {{ document.getElementById('ctx-menu').style.display = 'none'; }}
+
+function _addRfNode(id, type, data, w, h) {{
+  rfNodes.push({{ id, type, position: {{ x: ctxPos.x - 200, y: ctxPos.y - 100 }}, data }});
+  window.__setNodes && window.__setNodes([...rfNodes]);
+}}
 
 function addStream() {{
   hideCtx();
-  const id = 'New_' + (D.streams.length + 1);
+  const id = prompt('Stream name:', 'New_' + (D.streams.length + 1));
+  if (!id) return;
   const ns = {{ id, name: id, index: D.streams.length+1, T_celsius: 25, P_input: null, phase: 'Gas', fixed: true, total_mol: 0, total_NL: 0, total_g: 0, components: {{}}, original_components: null, has_composition_constraints: false }};
   D.streams.push(ns);
   streamMap[id] = ns;
-  // Add to ReactFlow
-  rfNodes.push({{ id, type: 'stream', position: {{ x: ctxPos.x - 200, y: ctxPos.y - 100 }}, data: {{ label: ns.index + '. ' + id, info: '25°C | Gas | (new)', cls: 'zero' }} }});
-  // Trigger re-render (hacky but works with useState)
-  window.__setNodes && window.__setNodes([...rfNodes]);
+  _addRfNode(id, 'stream', {{ label: ns.index + '. ' + id, info: '(new)', cls: 'zero' }});
   openEdit(id);
 }}
+
+function addUnit(utype) {{
+  hideCtx();
+  const uid = 'U' + (D.units.length + 1);
+  const u = {{ id: uid, type: utype }};
+  if (utype === 'Reactor' || utype === 'MultiReactor') u.conversion = 0.5;
+  if (utype === 'MultiReactor') {{ u.reactions = []; u.selectivities = []; u.key = ''; }}
+  if (utype === 'Absorber') {{ u.stages = 10; u.T_celsius = 25; }}
+  if (utype === 'GibbsReactor') {{ u.T_celsius = 850; u.species = []; }}
+  D.units.push(u);
+  unitMap[uid] = u;
+  let lines = [utype];
+  _addRfNode(uid, 'unit', {{ lines }});
+  openUnitEdit(uid);
+}}
+
+function addConstraint() {{
+  hideCtx();
+  const label = prompt('Constraint label:', 'New constraint');
+  const code = prompt('Constraint code (lambda):', 'lambda: Mixed.total_molar_flow - 100');
+  if (!label) return;
+  D.constraints = D.constraints || [];
+  D.constraints.push(label);
+  D.constraint_specs = D.constraint_specs || [];
+  D.constraint_specs.push({{ label, code: code || '' }});
+  // Update constraint node
+  const existing = rfNodes.find(n => n.id === 'CONSTRAINTS');
+  if (existing) {{
+    existing.data.lines = ['Constraints:'].concat(D.constraints);
+  }} else {{
+    rfNodes.push({{ id: 'CONSTRAINTS', type: 'constraint', position: {{ x: ctxPos.x-200, y: ctxPos.y-100 }}, data: {{ lines: ['Constraints:', label] }} }});
+  }}
+  window.__setNodes && window.__setNodes([...rfNodes]);
+}}
+
+// --- Edge addition via onConnect ---
 
 let currentNodes = rfNodes;
 
@@ -1120,7 +1206,12 @@ function App() {{
   }}, []);
   const onEdgesChange = useCallback(ch => setEdges(eds => applyEdgeChanges(ch, eds)), []);
   const onNodeClick = useCallback((ev, node) => showDetail(node.id), []);
-  return e(RF, {{ nodes, edges, onNodesChange, onEdgesChange, onNodeClick, nodeTypes, fitView: true, minZoom: 0.2, maxZoom: 3 }},
+  const onConnect = useCallback((conn) => {{
+    const newEdge = {{ id: conn.source + '_' + conn.target, source: conn.source, target: conn.target, type: 'smoothstep', style: {{ strokeWidth: 2 }} }};
+    rfEdges.push(newEdge);
+    setEdges([...rfEdges]);
+  }}, []);
+  return e(RF, {{ nodes, edges, onNodesChange, onEdgesChange, onNodeClick, onConnect, nodeTypes, fitView: true, minZoom: 0.2, maxZoom: 3 }},
     e(Background, {{ variant:'dots', gap:16, size:1 }}),
     e(Controls, null),
     e(MiniMap, {{ nodeStrokeWidth:3, zoomable:true, pannable:true }})

@@ -83,3 +83,11 @@ def load_json(path: str) -> dict:
     """JSON ファイルから Flowsheet を復元・求解する。"""
     from chemflow.loader import load_json as _load
     return _load(path)
+
+
+def export_empty_reactflow(path: str, title: str = "New Flowsheet") -> None:
+    """空のフローシートHTMLテンプレートを出力する。ゼロベースで構築可能。"""
+    reset()
+    fs = _get_flowsheet()
+    fs.name = title
+    fs.export_reactflow(path, title=title, description="Right-click to add streams and units. Drag handles to connect.")

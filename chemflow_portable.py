@@ -1085,6 +1085,14 @@ def export_reactflow(path: str, title: str | None = None, description: str | Non
     _get_flowsheet().export_reactflow(path, title=title, description=description)
 
 
+def export_empty_reactflow(path: str, title: str = "New Flowsheet") -> None:
+    """空のフローシートHTMLテンプレートを出力する。"""
+    reset()
+    fs = _get_flowsheet()
+    fs.name = title
+    fs.export_reactflow(path, title=title, description="Right-click to add streams and units. Drag handles to connect.")
+
+
 def generate_json() -> dict:
     """Flowsheet を JSON dict として出力する。"""
     return _get_flowsheet().generate_json()
