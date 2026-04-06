@@ -71,7 +71,11 @@ class Flowsheet:
         return np.concatenate(res_list)
 
     def solve(self, **kwargs) -> dict:
-        """連立方程式を求解する。"""
+        """連立方程式を求解する。
+
+        収束しない場合、自動的に複数のソルバーメソッドを試行する。
+        method を明示的に指定した場合はフォールバックしない。
+        """
         x0 = self._pack()
         if len(x0) == 0:
             return {"success": True, "message": "No variables to solve"}
@@ -84,12 +88,33 @@ class Flowsheet:
                 f"{n_vars} variables, {n_residuals} equations"
             )
 
-        result = root(self._residuals, x0, **kwargs)
-        if result.success:
-            self._unpack(result.x)
-        else:
-            raise SolveError(f"Solver did not converge: {result.message}")
-        return result
+        # method が明示指定されている場合はフォールバックしない
+        if 'method' in kwargs:
+            result = root(self._residuals, x0, **kwargs)
+            if result.success:
+                self._unpack(result.x)
+            else:
+                raise SolveError(f"Solver did not converge: {result.message}")
+            return result
+
+        # 自動フォールバック: 複数のソルバーを試行
+        methods = ['hybr', 'lm', 'broyden1', 'df-sane']
+        last_result = None
+
+        for method in methods:
+            try:
+                result = root(self._residuals, x0, method=method, **kwargs)
+                if result.success:
+                    self._unpack(result.x)
+                    return result
+                last_result = result
+            except Exception:
+                continue
+
+        # 全て失敗した場合
+        msg = last_result.message if last_result else "All solver methods failed"
+        raise SolveError(f"Solver did not converge: {msg}")
+        return last_result
 
     def fix_stream(self, stream) -> None:
         stream._fixed = True
