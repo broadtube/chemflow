@@ -1,6 +1,6 @@
 """パターン3: 循環系 + 複数反応 + 多段吸収
 
-入口: Syngas(vol%指定, total逆算) + H2 + N2 + Rx_Water(全て0)
+入口: Syngas(vol%指定, total逆算) + H2 + Rx_Water(全て0)
 Mixed: total 500 NL/h 固定
   3反応同時進行（CO全体転化率12%）:
     2CO + 2H2 → CH3COOH (選択率70%)
@@ -10,6 +10,7 @@ Mixed: total 500 NL/h 固定
   パージ率 5%（Purge = Gas * 0.05）
 """
 
+import numpy as np
 from chemflow import (
     Stream, eq, constrain, solve, reset, print_streams,
     set_component_order, set_stream_order,
@@ -18,7 +19,8 @@ from chemflow import (
 
 reset()
 
-comps = ["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"]
+# N2を除外して計算（表示時にset_component_orderで追加）
+comps = ["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH"]
 
 # Feeds
 Syngas_feed = Stream(
@@ -28,14 +30,15 @@ Syngas_feed = Stream(
     T=25, P="0.1MPaG", phase="Gas",
 )
 H2_feed = Stream({"H2": 0}, name="H2_feed", T=25, P="5MPaG", phase="Gas")
-N2_feed = Stream({"N2": 0}, name="N2_feed", T=25, P="5MPaG", phase="Gas")
+N2_feed = Stream({"N2": 0}, name="N2_feed", T=25, P="5MPaG", phase="Gas")  # 表示用
 Rx_Water_Feed = Stream({"H2O": 0}, name="Rx_Water_Feed", T=25, phase="Liquid")
 
 # 循環ストリーム
 Recycle = Stream(components=comps, name="Recycle", T=25, P="5MPaG", phase="Gas")
 Mixed = Stream(components=comps, name="Mixed", T=25, P="5MPaG", phase="Gas")
 
-eq(Mixed, Syngas_feed + H2_feed + N2_feed + Rx_Water_Feed + Recycle)
+# N2_feedはMixerに含めない（表示用のみ）
+eq(Mixed, Syngas_feed + H2_feed + Rx_Water_Feed + Recycle)
 
 # 3反応同時 (CO全体転化率12%)
 ReactOut = Mixed.multi_react(
@@ -85,7 +88,7 @@ constrain(lambda: Purge.total_molar_flow - Gas.total_molar_flow * 0.05,
           label="Purge rate = 5%",
           code="lambda: Purge.total_molar_flow - Gas.total_molar_flow * 0.05")
 
-solve()
+solve(bounds=(0, np.inf))
 
 # 表示設定
 set_component_order(["H2", "CO", "CO2", "CH4", "H2O", "CH3CHO", "CH3COOH", "N2"])
