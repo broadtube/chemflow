@@ -428,7 +428,8 @@ class Flowsheet:
                 for i, formula in enumerate(all_formulas):
                     row = [formula, f"{mw_map[formula]:.2f}"]
                     for d in data:
-                        row.extend([f"{d[abs_key][i]:.4f}", f"{d[rel_key][i]:.4f}"])
+                        # 絶対値は6桁、相対値は4桁で出力
+                        row.extend([f"{d[abs_key][i]:.6f}", f"{d[rel_key][i]:.4f}"])
                     w.writerow(row)
 
                 # Total行
@@ -436,7 +437,7 @@ class Flowsheet:
                 for d in data:
                     t_val = d[total_key]
                     r_val = "1.0000" if abs(t_val) > 1e-10 else "0.0000"
-                    total_row.extend([f"{t_val:.4f}", r_val])
+                    total_row.extend([f"{t_val:.6f}", r_val])
                 w.writerow(total_row)
 
     def export_excel(self, filename: str, sheet: str, cell: str = "A1") -> None:

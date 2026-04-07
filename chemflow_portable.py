@@ -816,12 +816,12 @@ class Flowsheet:
                 w.writerow(unit_row)
                 for i, formula in enumerate(all_formulas):
                     row = [formula, f"{mw_map[formula]:.2f}"]
-                    for d in data: row.extend([f"{d[abs_key][i]:.4f}", f"{d[rel_key][i]:.4f}"])
+                    for d in data: row.extend([f"{d[abs_key][i]:.6f}", f"{d[rel_key][i]:.4f}"])
                     w.writerow(row)
                 total_row = ["Total", ""]
                 for d in data:
                     t_val = d[total_key]
-                    total_row.extend([f"{t_val:.4f}", "1.0000" if abs(t_val) > 1e-10 else "0.0000"])
+                    total_row.extend([f"{t_val:.6f}", "1.0000" if abs(t_val) > 1e-10 else "0.0000"])
                 w.writerow(total_row)
                 w.writerow([])
 
