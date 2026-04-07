@@ -1217,8 +1217,8 @@ class StreamExpression:
     def gibbs_react(self, T, P, species):
         return self._ensure_materialized().gibbs_react(T, P, species)
 
-    def multi_react(self, reactions, key, conversion, selectivities):
-        return self._ensure_materialized().multi_react(reactions, key, conversion, selectivities)
+    def multi_react(self, reactions, key, conversion, selectivities, strict_selectivity=False):
+        return self._ensure_materialized().multi_react(reactions, key, conversion, selectivities, strict_selectivity)
 
     def separate_water(self, *args, **kwargs):
         return self._ensure_materialized().separate_water(*args, **kwargs)
@@ -1609,7 +1609,7 @@ class Stream:
         ))
         return outlet
 
-    def multi_react(self, reactions, key, conversion, selectivities) -> Stream:
+    def multi_react(self, reactions, key, conversion, selectivities, strict_selectivity=False) -> Stream:
         outlet_formulas = [c.formula for c in self.components]
         for rxn in reactions:
             for f in rxn:
@@ -1624,7 +1624,76 @@ class Stream:
             reactions=reactions, key=key,
             conversion=conversion, selectivities=selectivities,
         ))
+        # 厳密な選択率拘束を追加
+        if strict_selectivity:
+            self._add_selectivity_constraints(outlet, reactions, key, selectivities)
         return outlet
+
+    def _add_selectivity_constraints(self, outlet, reactions, key, selectivities):
+        """選択率を明示的に拘束する制約を追加。"""
+        inlet = self
+
+        # 各成分がどの反応で生成されるかを特定
+        product_reactions = {}
+        for i, rxn in enumerate(reactions):
+            for formula, coeff in rxn.items():
+                if coeff > 0:
+                    if formula not in product_reactions:
+                        product_reactions[formula] = []
+                    product_reactions[formula].append(i)
+
+        # 各反応の固有生成物を特定
+        markers = {}  # rxn_idx -> (formula, stoich)
+        for formula, rxn_indices in product_reactions.items():
+            if len(rxn_indices) == 1:
+                rxn_idx = rxn_indices[0]
+                if rxn_idx not in markers:
+                    stoich = reactions[rxn_idx][formula]
+                    markers[rxn_idx] = (formula, stoich)
+
+        # 固有生成物がない反応は警告
+        missing = [i for i in range(len(reactions)) if i not in markers]
+        if missing:
+            import warnings
+            warnings.warn(f"Reactions {missing} have no unique marker product.")
+
+        # 選択率拘束を追加（最後の反応以外）
+        for rxn_idx in range(len(reactions) - 1):
+            if rxn_idx not in markers:
+                continue
+
+            marker_formula, marker_stoich = markers[rxn_idx]
+            key_stoich = abs(reactions[rxn_idx][key])
+            sel = selectivities[rxn_idx]
+
+            inlet_formulas = [c.formula for c in inlet.components]
+            outlet_formulas = [c.formula for c in outlet.components]
+
+            marker_in_idx = inlet_formulas.index(marker_formula) if marker_formula in inlet_formulas else None
+            marker_out_idx = outlet_formulas.index(marker_formula)
+            key_in_idx = inlet_formulas.index(key)
+            key_out_idx = outlet_formulas.index(key)
+
+            def make_constraint(inlet, outlet, marker_in_idx, marker_out_idx,
+                              key_in_idx, key_out_idx, key_stoich, marker_stoich, sel):
+                def constraint():
+                    marker_in = inlet.molar_flows[marker_in_idx] if marker_in_idx is not None else 0.0
+                    marker_out = outlet.molar_flows[marker_out_idx]
+                    marker_produced = marker_out - marker_in
+                    key_in = inlet.molar_flows[key_in_idx]
+                    key_out = outlet.molar_flows[key_out_idx]
+                    key_consumed = key_in - key_out
+                    lhs = key_stoich * marker_produced / marker_stoich
+                    rhs = sel * key_consumed
+                    return lhs - rhs
+                return constraint
+
+            constraint_fn = make_constraint(
+                inlet, outlet, marker_in_idx, marker_out_idx,
+                key_in_idx, key_out_idx, key_stoich, marker_stoich, sel
+            )
+
+            constrain(constraint_fn, label=f"Selectivity[{rxn_idx}]={sel}")
 
     def separate_water(self, T, P, name_gas=None, name_water=None, henry_constants=None):
         P_pascal = parse_pressure(P)

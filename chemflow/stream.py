@@ -463,6 +463,7 @@ class Stream:
         key: str,
         conversion: float,
         selectivities: list[float],
+        strict_selectivity: bool = False,
     ) -> Stream:
         """複数同時反応リアクター。
 
@@ -476,6 +477,8 @@ class Stream:
             基準成分の全体転化率 (0~1)
         selectivities : list[float]
             各反応の選択率（基準成分消費量ベース、合計=1）
+        strict_selectivity : bool
+            True の場合、各反応の固有生成物から選択率を明示的に拘束する
         """
         from chemflow.global_flowsheet import _get_flowsheet
         from chemflow.units import MultiReactor
@@ -503,7 +506,117 @@ class Stream:
             selectivities=selectivities,
         )
         _get_flowsheet().add_unit(reactor)
+
+        # 厳密な選択率拘束を追加
+        if strict_selectivity:
+            self._add_selectivity_constraints(
+                outlet, reactions, key, selectivities
+            )
+
         return outlet
+
+    def _add_selectivity_constraints(
+        self,
+        outlet: Stream,
+        reactions: list[dict[str, float]],
+        key: str,
+        selectivities: list[float],
+    ) -> None:
+        """選択率を明示的に拘束する制約を追加。
+
+        各反応の固有生成物（その反応でのみ生成される成分）を特定し、
+        その生成量から選択率を直接拘束する。
+        """
+        from chemflow.api import constrain
+
+        inlet = self
+
+        # 各成分がどの反応で生成されるかを特定
+        product_reactions: dict[str, list[int]] = {}
+        for i, rxn in enumerate(reactions):
+            for formula, coeff in rxn.items():
+                if coeff > 0:  # 生成物
+                    if formula not in product_reactions:
+                        product_reactions[formula] = []
+                    product_reactions[formula].append(i)
+
+        # 各反応の固有生成物（1つの反応でのみ生成）を特定
+        markers: dict[int, tuple[str, float]] = {}  # rxn_idx -> (formula, stoich)
+        for formula, rxn_indices in product_reactions.items():
+            if len(rxn_indices) == 1:
+                rxn_idx = rxn_indices[0]
+                if rxn_idx not in markers:
+                    stoich = reactions[rxn_idx][formula]
+                    markers[rxn_idx] = (formula, stoich)
+
+        # 固有生成物がない反応は選択率拘束を追加できない
+        missing = [i for i in range(len(reactions)) if i not in markers]
+        if missing:
+            import warnings
+            warnings.warn(
+                f"Reactions {missing} have no unique marker product. "
+                "Selectivity constraints may not be fully enforced."
+            )
+
+        # 選択率拘束を追加（最後の反応以外）
+        # constraint: |key_stoich| * (marker_out - marker_in) / marker_stoich
+        #           = sel * (key_in - key_out)
+        for rxn_idx in range(len(reactions) - 1):
+            if rxn_idx not in markers:
+                continue
+
+            marker_formula, marker_stoich = markers[rxn_idx]
+            key_stoich = abs(reactions[rxn_idx][key])
+            sel = selectivities[rxn_idx]
+
+            # インデックスを取得
+            inlet_formulas = [c.formula for c in inlet.components]
+            outlet_formulas = [c.formula for c in outlet.components]
+
+            marker_in_idx = inlet_formulas.index(marker_formula) if marker_formula in inlet_formulas else None
+            marker_out_idx = outlet_formulas.index(marker_formula)
+            key_in_idx = inlet_formulas.index(key)
+            key_out_idx = outlet_formulas.index(key)
+
+            # クロージャ用にローカル変数をキャプチャ
+            _inlet = inlet
+            _outlet = outlet
+            _marker_in_idx = marker_in_idx
+            _marker_out_idx = marker_out_idx
+            _key_in_idx = key_in_idx
+            _key_out_idx = key_out_idx
+            _key_stoich = key_stoich
+            _marker_stoich = marker_stoich
+            _sel = sel
+            _rxn_idx = rxn_idx
+
+            def make_constraint(inlet, outlet, marker_in_idx, marker_out_idx,
+                              key_in_idx, key_out_idx, key_stoich, marker_stoich, sel):
+                def constraint():
+                    marker_in = inlet.molar_flows[marker_in_idx] if marker_in_idx is not None else 0.0
+                    marker_out = outlet.molar_flows[marker_out_idx]
+                    marker_produced = marker_out - marker_in
+
+                    key_in = inlet.molar_flows[key_in_idx]
+                    key_out = outlet.molar_flows[key_out_idx]
+                    key_consumed = key_in - key_out
+
+                    # |key_stoich| * marker_produced / marker_stoich = sel * key_consumed
+                    lhs = key_stoich * marker_produced / marker_stoich
+                    rhs = sel * key_consumed
+                    return lhs - rhs
+                return constraint
+
+            constraint_fn = make_constraint(
+                _inlet, _outlet, _marker_in_idx, _marker_out_idx,
+                _key_in_idx, _key_out_idx, _key_stoich, _marker_stoich, _sel
+            )
+
+            constrain(
+                constraint_fn,
+                label=f"Selectivity[{_rxn_idx}]={_sel}",
+                code=f"Selectivity constraint for reaction {_rxn_idx}"
+            )
 
     def separate_water(
         self,
