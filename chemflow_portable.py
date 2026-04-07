@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Callable
 
 import numpy as np
-from scipy.optimize import root
+from scipy.optimize import root, least_squares
 
 
 # ============================================================
@@ -560,8 +560,16 @@ class Flowsheet:
                     res_list.append(np.atleast_1d(r))
         return np.concatenate(res_list) if res_list else np.array([])
 
-    def solve(self, **kwargs) -> dict:
+    def solve(self, bounds=None, **kwargs) -> dict:
         """連立方程式を求解する。
+
+        Parameters
+        ----------
+        bounds : tuple or None
+            変数の上下限 (lower, upper)。例: (0, np.inf) で非負制約。
+            指定時は least_squares ソルバーを使用。
+        **kwargs
+            scipy.optimize.root または least_squares に渡す追加引数。
 
         収束しない場合、自動的に複数のソルバーメソッドを試行する。
         method を明示的に指定した場合はフォールバックしない。
@@ -576,6 +584,10 @@ class Flowsheet:
                 f"System is {'over' if n_res > n_vars else 'under'}-determined: "
                 f"{n_vars} variables, {n_res} equations"
             )
+
+        # bounds が指定されている場合は least_squares を使用
+        if bounds is not None:
+            return self._solve_with_bounds(x0, bounds, **kwargs)
 
         # method が明示指定されている場合はフォールバックしない
         if 'method' in kwargs:
@@ -603,6 +615,55 @@ class Flowsheet:
         # 全て失敗した場合
         msg = last_result.message if last_result else "All solver methods failed"
         raise SolveError(f"Solver did not converge: {msg}")
+
+    def _solve_with_bounds(self, x0, bounds, **kwargs) -> dict:
+        """least_squares を使用して bounds 付きで求解する。"""
+        lower, upper = bounds
+
+        # スカラーの場合は配列に展開
+        if np.isscalar(lower):
+            lower = np.full(len(x0), lower)
+        if np.isscalar(upper):
+            upper = np.full(len(x0), upper)
+
+        # 初期値が bounds 外の場合は調整
+        x0 = np.clip(x0, lower + 1e-10, upper - 1e-10 if np.isfinite(upper).all() else upper)
+
+        # 複数のメソッドを試行
+        methods = ['trf', 'dogbox', 'lm']
+        last_result = None
+
+        for method in methods:
+            try:
+                # lm は bounds をサポートしないのでスキップ（bounds指定時）
+                if method == 'lm' and (np.any(lower != -np.inf) or np.any(upper != np.inf)):
+                    continue
+
+                result = least_squares(
+                    self._residuals, x0,
+                    bounds=(lower, upper),
+                    method=method,
+                    **kwargs
+                )
+
+                # least_squares の成功判定: cost が十分小さいか、status > 0
+                if result.cost < 1e-10 or result.status > 0:
+                    self._unpack(result.x)
+                    result.success = True
+                    return result
+                last_result = result
+            except Exception:
+                continue
+
+        # 全て失敗した場合
+        if last_result is not None:
+            # 最後の結果で更新（収束不十分でも）
+            self._unpack(last_result.x)
+            if last_result.cost < 1e-6:
+                last_result.success = True
+                return last_result
+            raise SolveError(f"Solver did not converge: cost={last_result.cost:.2e}")
+        raise SolveError("All bounded solver methods failed")
 
     def set_stream_order(self, order: list[str]) -> None:
         self._stream_order = order
