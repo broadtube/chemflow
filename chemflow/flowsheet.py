@@ -543,7 +543,8 @@ class Flowsheet:
                 ws.Cells(r, col0).Value = formula
                 ws.Cells(r, col0 + 1).Value = round(mw_map[formula], 2)
                 for si, d in enumerate(data):
-                    ws.Cells(r, col0 + 2 + si * 2).Value = round(d[abs_key][i], 4)
+                    # 絶対値は6桁、相対値は4桁
+                    ws.Cells(r, col0 + 2 + si * 2).Value = round(d[abs_key][i], 6)
                     ws.Cells(r, col0 + 3 + si * 2).Value = round(d[rel_key][i], 4)
                 r += 1
 
@@ -551,7 +552,7 @@ class Flowsheet:
             ws.Cells(r, col0).Value = "Total"
             for si, d in enumerate(data):
                 t_val = d[total_key]
-                ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 4)
+                ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 6)
                 ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
             r += 1
 
