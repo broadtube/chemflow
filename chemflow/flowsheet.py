@@ -137,8 +137,13 @@ class Flowsheet:
         if np.isscalar(upper):
             upper = np.full(len(x0), upper)
 
-        # 初期値が bounds 外の場合は調整
-        x0 = np.clip(x0, lower + 1e-10, upper - 1e-10 if np.isfinite(upper).all() else upper)
+        # 初期値が bounds 外の場合は調整（ゼロはゼロのまま維持）
+        x0_clipped = np.clip(x0, lower, upper if np.isfinite(upper).all() else upper)
+        # lower=0 の場合、元がゼロなら維持、それ以外は微小値を加える
+        for i in range(len(x0_clipped)):
+            if x0_clipped[i] <= lower[i] and x0[i] != 0:
+                x0_clipped[i] = lower[i] + 1e-10
+        x0 = x0_clipped
 
         # 複数のメソッドを試行
         methods = ['trf', 'dogbox', 'lm']
