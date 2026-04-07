@@ -654,6 +654,7 @@ class Flowsheet:
                 # least_squares の成功判定: cost が十分小さいか、status > 0
                 if result.cost < 1e-10 or result.status > 0:
                     self._unpack(result.x)
+                    self._cleanup_small_values()
                     result.success = True
                     return result
                 last_result = result
@@ -664,11 +665,29 @@ class Flowsheet:
         if last_result is not None:
             # 最後の結果で更新（収束不十分でも）
             self._unpack(last_result.x)
+            self._cleanup_small_values()
             if last_result.cost < 1e-6:
                 last_result.success = True
                 return last_result
             raise SolveError(f"Solver did not converge: cost={last_result.cost:.2e}")
         raise SolveError("All bounded solver methods failed")
+
+    def _cleanup_small_values(self, threshold: float = 1e-10) -> None:
+        """ソルバー後に微小値を 0 にクリーンアップする。"""
+        for stream in self.streams:
+            if stream._fixed:
+                continue
+            # 分率制約があるストリームの非オリジナル成分を 0 に
+            if getattr(stream, '_has_frac_constraint', False) and stream._original_formulas:
+                for i, comp in enumerate(stream.components):
+                    if comp.formula not in stream._original_formulas:
+                        stream.molar_flows[i] = 0.0
+            # threshold 未満の値を 0 に
+            stream.molar_flows = np.where(
+                np.abs(stream.molar_flows) < threshold,
+                0.0,
+                stream.molar_flows
+            )
 
     def set_stream_order(self, order: list[str]) -> None:
         self._stream_order = order
@@ -1348,6 +1367,7 @@ class Stream:
         self._fixed = False
         self._composition_constraints: list = []
         self._original_formulas: set[str] | None = None
+        self._has_frac_constraint = False
 
         if composition is not None:
             self.components = list(composition.components)
@@ -1398,6 +1418,7 @@ class Stream:
                 self._fixed = True
             else:
                 self.molar_flows = np.ones(self.n_components)
+                self._original_formulas = set(formulas)  # 追加成分の0拘束用
                 self._register_frac_constraint(values, basis)
         else:
             raise BasisError(f"Unknown basis: '{basis}'")
@@ -1470,6 +1491,7 @@ class Stream:
     def _register_frac_constraint(self, fracs, basis):
         fracs = fracs / fracs.sum()
         original_fracs = dict(zip([c.formula for c in self.components], fracs))
+        self._has_frac_constraint = True
         def constraint():
             target = np.zeros(self.n_components)
             for i, c in enumerate(self.components):
@@ -1514,6 +1536,9 @@ class Stream:
         self.components.append(ComponentRegistry.get(formula))
         self.n_components = len(self.components)
         if self._fixed:
+            self.molar_flows = np.append(self.molar_flows, 0.0)
+        elif self._has_frac_constraint:
+            # 分率制約がある場合、追加成分は分率制約により0に暗黙拘束
             self.molar_flows = np.append(self.molar_flows, 0.0)
         elif self._original_formulas is not None and formula not in self._original_formulas:
             self.molar_flows = np.append(self.molar_flows, 0.0)

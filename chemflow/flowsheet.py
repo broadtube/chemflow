@@ -165,6 +165,7 @@ class Flowsheet:
                 # least_squares の成功判定: cost が十分小さいか、status > 0
                 if result.cost < 1e-10 or result.status > 0:
                     self._unpack(result.x)
+                    self._cleanup_small_values()
                     result.success = True
                     return result
                 last_result = result
@@ -175,11 +176,35 @@ class Flowsheet:
         if last_result is not None:
             # 最後の結果で更新（収束不十分でも）
             self._unpack(last_result.x)
+            self._cleanup_small_values()
             if last_result.cost < 1e-6:
                 last_result.success = True
                 return last_result
             raise SolveError(f"Solver did not converge: cost={last_result.cost:.2e}")
         raise SolveError("All bounded solver methods failed")
+
+    def _cleanup_small_values(self, threshold: float = 1e-10) -> None:
+        """ソルバー後に微小値を 0 にクリーンアップする。
+
+        - 分率制約があるストリームの非オリジナル成分を 0 に設定
+        - 全ストリームで threshold 未満の値を 0 に設定
+        """
+        for stream in self.streams:
+            if stream._fixed:
+                continue
+
+            # 分率制約があるストリームの非オリジナル成分を 0 に
+            if getattr(stream, '_has_frac_constraint', False) and stream._original_formulas:
+                for i, comp in enumerate(stream.components):
+                    if comp.formula not in stream._original_formulas:
+                        stream.molar_flows[i] = 0.0
+
+            # threshold 未満の値を 0 に
+            stream.molar_flows = np.where(
+                np.abs(stream.molar_flows) < threshold,
+                0.0,
+                stream.molar_flows
+            )
 
     def fix_stream(self, stream) -> None:
         stream._fixed = True

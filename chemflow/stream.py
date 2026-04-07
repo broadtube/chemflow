@@ -57,6 +57,7 @@ class Stream:
         self._fixed = False
         self._composition_constraints: list = []
         self._original_formulas: set[str] | None = None  # 初期成分リスト（動的追加の0拘束用）
+        self._has_frac_constraint = False  # 分率制約があるか（追加成分の0拘束を制御）
 
         if composition is not None:
             # 他ストリームと同組成、total未知
@@ -126,6 +127,7 @@ class Stream:
                 # 組成のみ、total 未知
                 self.molar_flows = np.ones(self.n_components)  # 初期推定
                 self._fixed = False
+                self._original_formulas = set(formulas)  # 追加成分の0拘束用
                 self._register_frac_constraint(values, basis)
         else:
             raise BasisError(f"Unknown basis: '{basis}'")
@@ -226,6 +228,7 @@ class Stream:
         # 元の成分リストを記録（後から追加された成分は0に拘束）
         original_formulas = [c.formula for c in self.components]
         original_fracs = dict(zip(original_formulas, fracs))
+        self._has_frac_constraint = True  # 分率制約がある（追加成分は0に暗黙拘束）
 
         def constraint():
             # 全成分（動的追加含む）に対する比率目標を構築
@@ -289,6 +292,7 @@ class Stream:
         """成分を動的に追加する。
 
         固定ストリーム: 0で追加。
+        分率制約あり: 分率制約が追加成分を0に暗黙拘束するので、0で追加（追加制約なし）。
         未知ストリーム（_original_formulasあり）: 元の成分リストにない成分は0拘束を自動登録。
         未知ストリーム（_original_formulasなし）: 初期推定値0.1で追加（変数として扱う）。
         """
@@ -301,8 +305,12 @@ class Stream:
 
         if self._fixed:
             self.molar_flows = np.append(self.molar_flows, 0.0)
+        elif self._has_frac_constraint:
+            # 分率制約がある場合、追加成分は分率制約により0に暗黙拘束される
+            # 追加の明示的な0拘束は不要（over-determined回避）
+            self.molar_flows = np.append(self.molar_flows, 0.0)
         elif self._original_formulas is not None and formula not in self._original_formulas:
-            # 元の成分リストにない → 0拘束
+            # 元の成分リストにない → 0拘束（分率制約がない場合のみ）
             self.molar_flows = np.append(self.molar_flows, 0.0)
             idx = self.n_components - 1
             self._composition_constraints.append(lambda i=idx: np.array([self.molar_flows[i]]))
