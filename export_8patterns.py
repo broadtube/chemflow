@@ -1,8 +1,9 @@
 """8通りのPattern3バリエーションをExcelの各シートに出力
 
+順序: 流量 → Purge → 転化率/選択率
+流量: 37.5NL/h, 500NL/h
 Purge: 5%, 10%
-選択率: [0.7, 0.2, 0.1], [0.8, 0.13, 0.07]
-流量: 500NL/h, 37.5NL/h
+転化率/選択率: 12%/[0.7, 0.2, 0.1], 20%/[0.8, 0.13, 0.07]
 
 実行:
   python export_8patterns.py
@@ -15,7 +16,7 @@ from chemflow import (
 )
 
 
-def run_pattern(purge_rate, selectivities, flow_rate):
+def run_pattern(purge_rate, selectivities, flow_rate, conversion):
     """1つのパターンを計算"""
     reset()
 
@@ -39,7 +40,7 @@ def run_pattern(purge_rate, selectivities, flow_rate):
 
     eq(Mixed, Syngas_feed + H2_feed + Rx_Water_Feed + Recycle)
 
-    # 3反応同時 (CO全体転化率12%)
+    # 3反応同時
     ReactOut = Mixed.multi_react(
         reactions=[
             {'CO': -2, 'H2': -2, 'CH3COOH': 1},
@@ -47,7 +48,7 @@ def run_pattern(purge_rate, selectivities, flow_rate):
             {'CO': -1, 'H2': -3, 'CH4': 1, 'H2O': 1},
         ],
         key='CO',
-        conversion=0.12,
+        conversion=conversion,
         selectivities=selectivities,
     )
     ReactOut.name = 'ReactOut'
@@ -95,16 +96,18 @@ def run_pattern(purge_rate, selectivities, flow_rate):
     }
 
 
-# 8通りの組み合わせ
+# 8通りの組み合わせ (順序: 流量 → Purge → 転化率/選択率)
 patterns = [
-    {'purge': 0.05, 'selectivities': [0.7, 0.2, 0.1], 'flow': 500},
-    {'purge': 0.05, 'selectivities': [0.7, 0.2, 0.1], 'flow': 37.5},
-    {'purge': 0.05, 'selectivities': [0.8, 0.13, 0.07], 'flow': 500},
-    {'purge': 0.05, 'selectivities': [0.8, 0.13, 0.07], 'flow': 37.5},
-    {'purge': 0.10, 'selectivities': [0.7, 0.2, 0.1], 'flow': 500},
-    {'purge': 0.10, 'selectivities': [0.7, 0.2, 0.1], 'flow': 37.5},
-    {'purge': 0.10, 'selectivities': [0.8, 0.13, 0.07], 'flow': 500},
-    {'purge': 0.10, 'selectivities': [0.8, 0.13, 0.07], 'flow': 37.5},
+    # 1-4: 37.5 NL/h
+    {'flow': 37.5, 'purge': 0.05, 'conversion': 0.12, 'selectivities': [0.7, 0.2, 0.1]},
+    {'flow': 37.5, 'purge': 0.05, 'conversion': 0.20, 'selectivities': [0.8, 0.13, 0.07]},
+    {'flow': 37.5, 'purge': 0.10, 'conversion': 0.12, 'selectivities': [0.7, 0.2, 0.1]},
+    {'flow': 37.5, 'purge': 0.10, 'conversion': 0.20, 'selectivities': [0.8, 0.13, 0.07]},
+    # 5-8: 500 NL/h
+    {'flow': 500, 'purge': 0.05, 'conversion': 0.12, 'selectivities': [0.7, 0.2, 0.1]},
+    {'flow': 500, 'purge': 0.05, 'conversion': 0.20, 'selectivities': [0.8, 0.13, 0.07]},
+    {'flow': 500, 'purge': 0.10, 'conversion': 0.12, 'selectivities': [0.7, 0.2, 0.1]},
+    {'flow': 500, 'purge': 0.10, 'conversion': 0.20, 'selectivities': [0.8, 0.13, 0.07]},
 ]
 
 output_file = 'output.xlsx'
@@ -116,9 +119,9 @@ print('注意: output.xlsx を開いた状態で実行してください')
 
 for i, p in enumerate(patterns, 1):
     sheet_name = f'Pattern{i}'
-    print(f'\n--- {sheet_name}: Purge={p["purge"]*100:.0f}%, Sel={p["selectivities"]}, Flow={p["flow"]}NL/h ---')
+    print(f'\n--- {sheet_name}: Flow={p["flow"]}NL/h, Purge={p["purge"]*100:.0f}%, Conv={p["conversion"]*100:.0f}%, Sel={p["selectivities"]} ---')
 
-    result = run_pattern(p['purge'], p['selectivities'], p['flow'])
+    result = run_pattern(p['purge'], p['selectivities'], p['flow'], p['conversion'])
 
     print(f'  Mixed flow: {result["Mixed_flow"]:.4f} NL/h')
     print(f'  Purge rate: {result["Purge_rate"]*100:.4f}%')
