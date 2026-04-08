@@ -189,11 +189,50 @@ class Flowsheet:
         - 分率制約があるストリームの非オリジナル成分を 0 に設定
         - 全ストリームで threshold 未満の値を 0 に設定
         - 各ユニットの post_solve を呼び出す
+        - Mixerの出口が0の成分は入口も0に設定
         """
         # ユニット固有の後処理を実行
         for unit in self.units:
             if hasattr(unit, 'post_solve'):
                 unit.post_solve()
+
+        # 分率制約があるストリームの非オリジナル成分を先に0に（Mixer伝播の前に）
+        for stream in self.streams:
+            if stream._fixed:
+                continue
+            if getattr(stream, '_has_frac_constraint', False) and stream._original_formulas:
+                for i, comp in enumerate(stream.components):
+                    if comp.formula not in stream._original_formulas:
+                        stream.molar_flows[i] = 0.0
+
+        # Mixerの0伝播（複数回実行して収束させる）
+        from chemflow.units import Mixer
+        for _ in range(3):  # 複数回で伝播を収束
+            for unit in self.units:
+                if isinstance(unit, Mixer):
+                    outlet = unit.outlet
+                    outlet_formulas = [c.formula for c in outlet.components]
+
+                    for i, f in enumerate(outlet_formulas):
+                        # 出口が0なら入口も0
+                        if outlet.molar_flows[i] == 0.0:
+                            for inlet in unit.inlets:
+                                for j, c in enumerate(inlet.components):
+                                    if c.formula == f:
+                                        inlet.molar_flows[j] = 0.0
+
+                        # 全入口が0（成分がない場合も0扱い）なら出口も0
+                        all_inlet_zero = True
+                        for inlet in unit.inlets:
+                            inlet_formulas = [c.formula for c in inlet.components]
+                            if f in inlet_formulas:
+                                idx = inlet_formulas.index(f)
+                                if inlet.molar_flows[idx] != 0.0:
+                                    all_inlet_zero = False
+                                    break
+                            # 成分がなければ0として扱う（ループ継続）
+                        if all_inlet_zero:
+                            outlet.molar_flows[i] = 0.0
 
         for stream in self.streams:
             if stream._fixed:

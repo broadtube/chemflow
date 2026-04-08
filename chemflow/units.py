@@ -418,6 +418,9 @@ class Absorber:
         V = total_gas_in
         safe_V = max(abs(V), 1e-10)
 
+        # 高吸収率成分のリスト
+        high_abs_components = []
+
         for f in liq_formulas:
             if f == "H2O":
                 continue
@@ -431,6 +434,7 @@ class Absorber:
 
             # 高吸収率 (>99%) の場合、ガス出口を0に設定
             if frac > 0.99:
+                high_abs_components.append(f)
                 gas_idx = gas_formulas.index(f) if f in gas_formulas else None
                 if gas_idx is not None:
                     self.gas_outlet.molar_flows[gas_idx] = 0.0
@@ -439,3 +443,11 @@ class Absorber:
                 feed_gas_i = gas_in.get(f, 0.0)
                 feed_water_i = water_in.get(f, 0.0)
                 self.liquid_outlet.molar_flows[liq_idx] = feed_water_i + feed_gas_i
+
+        # ガス出口に分率制約で接続されたストリームも0に設定
+        if high_abs_components and hasattr(self.gas_outlet, '_frac_linked_streams'):
+            for linked_stream in self.gas_outlet._frac_linked_streams:
+                for f in high_abs_components:
+                    for i, c in enumerate(linked_stream.components):
+                        if c.formula == f:
+                            linked_stream.molar_flows[i] = 0.0
