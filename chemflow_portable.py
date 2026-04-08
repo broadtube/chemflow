@@ -405,32 +405,70 @@ class Absorber:
         L = water_in.get("H2O", 0.0)
         V = total_gas_in
         res = []
+        # 水の物質収支: H2O成分のみ
         for j, f in enumerate(liq_formulas):
+            if f != "H2O":
+                continue
             gas_out_idx = gas_formulas.index(f) if f in gas_formulas else None
             gas_out_j = self.gas_outlet.molar_flows[gas_out_idx] if gas_out_idx is not None else 0.0
             liq_out_j = self.liquid_outlet.molar_flows[j]
             feed_j = gas_in.get(f, 0.0) + water_in.get(f, 0.0)
             res.append(gas_out_j + liq_out_j - feed_j)
+        # 水蒸気: Antoine式
         gas_h2o_idx = gas_formulas.index("H2O") if "H2O" in gas_formulas else None
         gas_h2o = self.gas_outlet.molar_flows[gas_h2o_idx] if gas_h2o_idx is not None else 0.0
         non_h2o_gas_out = sum(self.gas_outlet.molar_flows[i] for i, f in enumerate(gas_formulas) if f != "H2O")
         res.append(gas_h2o - y_sat / (1.0 - y_sat) * non_h2o_gas_out)
+        # Kremser式: 各非H2O成分のガス出口と液出口を直接計算
         for j, f in enumerate(liq_formulas):
             if f == "H2O":
                 continue
+            gas_out_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_out_j = self.gas_outlet.molar_flows[gas_out_idx] if gas_out_idx is not None else 0.0
+            liq_out_j = self.liquid_outlet.molar_flows[j]
+            feed_gas_i = gas_in.get(f, 0.0)
+            feed_water_i = water_in.get(f, 0.0)
             if f not in self.henry:
-                res.append(self.liquid_outlet.molar_flows[j] - water_in.get(f, 0.0))
+                res.append(gas_out_j - feed_gas_i)
+                res.append(liq_out_j - feed_water_i)
                 continue
             H_i = self.henry[f]
             K_i = H_i / P
             safe_V = max(abs(V), 1e-10)
             A_i = (L / safe_V) / K_i
             frac = _kremser_absorption_fraction(A_i, N)
-            feed_gas_i = gas_in.get(f, 0.0)
-            absorbed = frac * feed_gas_i
-            expected_liq = water_in.get(f, 0.0) + absorbed
-            res.append(self.liquid_outlet.molar_flows[j] - expected_liq)
+            expected_gas = (1.0 - frac) * feed_gas_i
+            res.append(gas_out_j - expected_gas)
+            expected_liq = feed_water_i + frac * feed_gas_i
+            res.append(liq_out_j - expected_liq)
         return np.array(res)
+
+    def post_solve(self) -> None:
+        """ソルバー後の後処理: 高吸収率成分のガス出口を0に設定。"""
+        gas_in = _get_flows_by_formula(self.gas_inlet)
+        water_in = _get_flows_by_formula(self.water_inlet)
+        gas_formulas = [c.formula for c in self.gas_outlet.components]
+        liq_formulas = [c.formula for c in self.liquid_outlet.components]
+        P, N = self.P_pascal, self.stages
+        total_gas_in = sum(gas_in.get(f, 0.0) for f in gas_formulas if f != "H2O")
+        L = water_in.get("H2O", 0.0)
+        V = total_gas_in
+        safe_V = max(abs(V), 1e-10)
+        for f in liq_formulas:
+            if f == "H2O" or f not in self.henry:
+                continue
+            H_i = self.henry[f]
+            K_i = H_i / P
+            A_i = (L / safe_V) / K_i
+            frac = _kremser_absorption_fraction(A_i, N)
+            if frac > 0.99:
+                gas_idx = gas_formulas.index(f) if f in gas_formulas else None
+                if gas_idx is not None:
+                    self.gas_outlet.molar_flows[gas_idx] = 0.0
+                liq_idx = liq_formulas.index(f)
+                feed_gas_i = gas_in.get(f, 0.0)
+                feed_water_i = water_in.get(f, 0.0)
+                self.liquid_outlet.molar_flows[liq_idx] = feed_water_i + feed_gas_i
 
 
 # ============================================================
@@ -674,15 +712,44 @@ class Flowsheet:
 
     def _cleanup_small_values(self, threshold: float = 1e-10) -> None:
         """ソルバー後に微小値を 0 にクリーンアップする。"""
+        # ユニット固有の後処理を実行
+        for unit in self.units:
+            if hasattr(unit, 'post_solve'):
+                unit.post_solve()
+        # 分率制約があるストリームの非オリジナル成分を先に0に（Mixer伝播の前に）
         for stream in self.streams:
             if stream._fixed:
                 continue
-            # 分率制約があるストリームの非オリジナル成分を 0 に
             if getattr(stream, '_has_frac_constraint', False) and stream._original_formulas:
                 for i, comp in enumerate(stream.components):
                     if comp.formula not in stream._original_formulas:
                         stream.molar_flows[i] = 0.0
-            # threshold 未満の値を 0 に
+        # Mixerの0伝播（複数回実行して収束させる）
+        for _ in range(3):
+            for unit in self.units:
+                if isinstance(unit, Mixer):
+                    outlet = unit.outlet
+                    outlet_formulas = [c.formula for c in outlet.components]
+                    for i, f in enumerate(outlet_formulas):
+                        if outlet.molar_flows[i] == 0.0:
+                            for inlet in unit.inlets:
+                                for j, c in enumerate(inlet.components):
+                                    if c.formula == f:
+                                        inlet.molar_flows[j] = 0.0
+                        all_inlet_zero = True
+                        for inlet in unit.inlets:
+                            inlet_formulas = [c.formula for c in inlet.components]
+                            if f in inlet_formulas:
+                                idx = inlet_formulas.index(f)
+                                if inlet.molar_flows[idx] != 0.0:
+                                    all_inlet_zero = False
+                                    break
+                        if all_inlet_zero:
+                            outlet.molar_flows[i] = 0.0
+        # threshold 未満の値を 0 に
+        for stream in self.streams:
+            if stream._fixed:
+                continue
             stream.molar_flows = np.where(
                 np.abs(stream.molar_flows) < threshold,
                 0.0,
