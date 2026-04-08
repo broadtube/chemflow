@@ -348,8 +348,10 @@ class Absorber:
 
         res = []
 
-        # --- 全体の物質収支: gas_in + water_in = gas_out + liquid_out ---
+        # --- 水の物質収支: H2O成分のみ ---
         for j, f in enumerate(liq_formulas):
+            if f != "H2O":
+                continue
             gas_out_idx = gas_formulas.index(f) if f in gas_formulas else None
             gas_out_j = self.gas_outlet.molar_flows[gas_out_idx] if gas_out_idx is not None else 0.0
             liq_out_j = self.liquid_outlet.molar_flows[j]
@@ -365,13 +367,21 @@ class Absorber:
         )
         res.append(gas_h2o - y_sat / (1.0 - y_sat) * non_h2o_gas_out)
 
-        # --- Kremser式: 各成分の吸収率 ---
+        # --- Kremser式: 各非H2O成分のガス出口と液出口を直接計算 ---
         for j, f in enumerate(liq_formulas):
             if f == "H2O":
                 continue
+
+            gas_out_idx = gas_formulas.index(f) if f in gas_formulas else None
+            gas_out_j = self.gas_outlet.molar_flows[gas_out_idx] if gas_out_idx is not None else 0.0
+            liq_out_j = self.liquid_outlet.molar_flows[j]
+            feed_gas_i = gas_in.get(f, 0.0)
+            feed_water_i = water_in.get(f, 0.0)
+
             if f not in self.henry:
-                # Henry定数なし: 吸収なし
-                res.append(self.liquid_outlet.molar_flows[j] - water_in.get(f, 0.0))
+                # Henry定数なし: 吸収なし → ガス出口 = ガス入��, 液出口 = 水入口
+                res.append(gas_out_j - feed_gas_i)
+                res.append(liq_out_j - feed_water_i)
                 continue
 
             H_i = self.henry[f]
@@ -382,15 +392,50 @@ class Absorber:
             # Kremser式で吸収率を計算
             frac = _kremser_absorption_fraction(A_i, N)
 
-            # ガス入口中の成分 i
-            feed_gas_i = gas_in.get(f, 0.0)
+            # ガス出口 = (1 - 吸収率) × ガス入口
+            expected_gas = (1.0 - frac) * feed_gas_i
+            # ガス出口 = (1 - 吸収率) × ガス入口
+            res.append(gas_out_j - expected_gas)
 
-            # 吸収量 = 吸収率 × ガス入口量
-            absorbed = frac * feed_gas_i
-
-            # 液出口 = 水入口中の成分 + 吸収量
-            expected_liq = water_in.get(f, 0.0) + absorbed
-            liq_out_j = self.liquid_outlet.molar_flows[j]
+            # 液出口 = 水入口 + 吸収量
+            expected_liq = feed_water_i + frac * feed_gas_i
             res.append(liq_out_j - expected_liq)
 
         return np.array(res)
+
+    def post_solve(self) -> None:
+        """ソルバー後の後処理: 高吸収率成分のガス出口を0に設定。"""
+        gas_in = _get_flows_by_formula(self.gas_inlet)
+        water_in = _get_flows_by_formula(self.water_inlet)
+        gas_formulas = [c.formula for c in self.gas_outlet.components]
+        liq_formulas = [c.formula for c in self.liquid_outlet.components]
+        P = self.P_pascal
+        N = self.stages
+
+        total_gas_in = sum(gas_in.get(f, 0.0) for f in gas_formulas if f != "H2O")
+        total_water_in = water_in.get("H2O", 0.0)
+        L = total_water_in
+        V = total_gas_in
+        safe_V = max(abs(V), 1e-10)
+
+        for f in liq_formulas:
+            if f == "H2O":
+                continue
+            if f not in self.henry:
+                continue
+
+            H_i = self.henry[f]
+            K_i = H_i / P
+            A_i = (L / safe_V) / K_i
+            frac = _kremser_absorption_fraction(A_i, N)
+
+            # 高吸収率 (>99%) の場合、ガス出口を0に設定
+            if frac > 0.99:
+                gas_idx = gas_formulas.index(f) if f in gas_formulas else None
+                if gas_idx is not None:
+                    self.gas_outlet.molar_flows[gas_idx] = 0.0
+                # 液出口も物質収支に合わせて調整
+                liq_idx = liq_formulas.index(f)
+                feed_gas_i = gas_in.get(f, 0.0)
+                feed_water_i = water_in.get(f, 0.0)
+                self.liquid_outlet.molar_flows[liq_idx] = feed_water_i + feed_gas_i

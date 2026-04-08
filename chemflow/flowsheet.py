@@ -188,7 +188,13 @@ class Flowsheet:
 
         - 分率制約があるストリームの非オリジナル成分を 0 に設定
         - 全ストリームで threshold 未満の値を 0 に設定
+        - 各ユニットの post_solve を呼び出す
         """
+        # ユニット固有の後処理を実行
+        for unit in self.units:
+            if hasattr(unit, 'post_solve'):
+                unit.post_solve()
+
         for stream in self.streams:
             if stream._fixed:
                 continue
