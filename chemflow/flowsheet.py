@@ -563,49 +563,52 @@ class Flowsheet:
             ("weight", "g/h",    "wt%",   "mass", "mass_frac", "total_mass"),
         ]
 
-        r = row0  # 現在の行
+        n_streams = len(names)
+        n_comps = len(all_formulas)
+        n_cols = 2 + n_streams * 2  # label, MW, (abs, rel) * n_streams
 
-        def _xl_header_row(label, mw_val, values):
-            nonlocal r
-            ws.Cells(r, col0).Value = label
-            if mw_val:
-                ws.Cells(r, col0 + 1).Value = mw_val
-            for si, v in enumerate(values):
-                ws.Cells(r, col0 + 2 + si * 2).Value = v
-            r += 1
+        # 2D配列を構築
+        rows = []
 
-        _xl_header_row("No.", "", [str(i+1) for i in range(len(names))])
-        _xl_header_row("Service", "", names)
-        _xl_header_row("Press.", "MPaG", pressures)
-        _xl_header_row("Temp.", "°C", temperatures)
-        _xl_header_row("Phase", "", phases)
+        def _make_header_row(label, mw_val, values):
+            row = [label, mw_val if mw_val else ""]
+            for v in values:
+                row.extend([v, ""])
+            return row
+
+        rows.append(_make_header_row("No.", "", [str(i+1) for i in range(n_streams)]))
+        rows.append(_make_header_row("Service", "", names))
+        rows.append(_make_header_row("Press.", "MPaG", pressures))
+        rows.append(_make_header_row("Temp.", "°C", temperatures))
+        rows.append(_make_header_row("Phase", "", phases))
 
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in sections:
             # Component/MW + 単位行
-            ws.Cells(r, col0).Value = "Component"
-            ws.Cells(r, col0 + 1).Value = "MW"
-            for si in range(len(names)):
-                ws.Cells(r, col0 + 2 + si * 2).Value = abs_unit
-                ws.Cells(r, col0 + 3 + si * 2).Value = rel_unit
-            r += 1
+            unit_row = ["Component", "MW"]
+            for si in range(n_streams):
+                unit_row.extend([abs_unit, rel_unit])
+            rows.append(unit_row)
 
             # 成分行
             for i, formula in enumerate(all_formulas):
-                ws.Cells(r, col0).Value = formula
-                ws.Cells(r, col0 + 1).Value = round(mw_map[formula], 2)
-                for si, d in enumerate(data):
-                    # 絶対値は6桁、相対値は4桁
-                    ws.Cells(r, col0 + 2 + si * 2).Value = round(d[abs_key][i], 6)
-                    ws.Cells(r, col0 + 3 + si * 2).Value = round(d[rel_key][i], 4)
-                r += 1
+                comp_row = [formula, round(mw_map[formula], 2)]
+                for d in data:
+                    comp_row.extend([round(d[abs_key][i], 6), round(d[rel_key][i], 4)])
+                rows.append(comp_row)
 
             # Total行
-            ws.Cells(r, col0).Value = "Total"
-            for si, d in enumerate(data):
+            total_row = ["Total", ""]
+            for d in data:
                 t_val = d[total_key]
-                ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 6)
-                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
-            r += 1
+                total_row.extend([round(t_val, 6), 1.0 if abs(t_val) > 1e-10 else 0.0])
+            rows.append(total_row)
+
+        # 範囲書き込み（1回のCOM呼び出し）
+        n_rows = len(rows)
+        end_row = row0 + n_rows - 1
+        end_col = col0 + n_cols - 1
+        rng = ws.Range(ws.Cells(row0, col0), ws.Cells(end_row, end_col))
+        rng.Value = rows
 
     def generate_mermaid(self) -> str:
         """Flowsheet からMermaid フロー図を自動生成する。"""

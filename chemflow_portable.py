@@ -933,44 +933,42 @@ class Flowsheet:
             raise ValueError(f"シート '{sheet}' が存在しません。存在するシート: {available}")
         start = ws.Range(cell)
         row0, col0 = start.Row, start.Column
-        r = row0
-        def _xr(label, mw_val, values):
-            nonlocal r
-            ws.Cells(r, col0).Value = label
-            if mw_val:
-                ws.Cells(r, col0 + 1).Value = mw_val
-            for si, v in enumerate(values):
-                ws.Cells(r, col0 + 2 + si * 2).Value = v
-            r += 1
-        _xr("No.", "", [str(i+1) for i in range(len(names))])
-        _xr("Service", "", names)
-        _xr("Press.", "MPaG", pressures)
-        _xr("Temp.", "°C", temperatures)
-        _xr("Phase", "", phases)
+        n_streams = len(names)
+        n_comps = len(all_formulas)
+        n_cols = 2 + n_streams * 2
+        rows = []
+        def _make_header_row(label, mw_val, values):
+            row = [label, mw_val if mw_val else ""]
+            for v in values:
+                row.extend([v, ""])
+            return row
+        rows.append(_make_header_row("No.", "", [str(i+1) for i in range(n_streams)]))
+        rows.append(_make_header_row("Service", "", names))
+        rows.append(_make_header_row("Press.", "MPaG", pressures))
+        rows.append(_make_header_row("Temp.", "°C", temperatures))
+        rows.append(_make_header_row("Phase", "", phases))
         for sec_name, abs_unit, rel_unit, abs_key, rel_key, total_key in [
             ("mol","mol/h","mol%","mol","mol_frac","total_mol"),
             ("Volume","NL/h","vol%","nvol","vol_frac","total_nvol"),
             ("weight","g/h","wt%","mass","mass_frac","total_mass"),
         ]:
-            ws.Cells(r, col0).Value = "Component"
-            ws.Cells(r, col0 + 1).Value = "MW"
-            for si in range(len(names)):
-                ws.Cells(r, col0 + 2 + si * 2).Value = abs_unit
-                ws.Cells(r, col0 + 3 + si * 2).Value = rel_unit
-            r += 1
+            unit_row = ["Component", "MW"]
+            for si in range(n_streams):
+                unit_row.extend([abs_unit, rel_unit])
+            rows.append(unit_row)
             for i, formula in enumerate(all_formulas):
-                ws.Cells(r, col0).Value = formula
-                ws.Cells(r, col0 + 1).Value = round(mw_map[formula], 2)
-                for si, d in enumerate(data):
-                    ws.Cells(r, col0 + 2 + si * 2).Value = round(d[abs_key][i], 6)
-                    ws.Cells(r, col0 + 3 + si * 2).Value = round(d[rel_key][i], 4)
-                r += 1
-            ws.Cells(r, col0).Value = "Total"
-            for si, d in enumerate(data):
+                comp_row = [formula, round(mw_map[formula], 2)]
+                for d in data:
+                    comp_row.extend([round(d[abs_key][i], 6), round(d[rel_key][i], 4)])
+                rows.append(comp_row)
+            total_row = ["Total", ""]
+            for d in data:
                 t_val = d[total_key]
-                ws.Cells(r, col0 + 2 + si * 2).Value = round(t_val, 6)
-                ws.Cells(r, col0 + 3 + si * 2).Value = 1.0 if abs(t_val) > 1e-10 else 0.0
-            r += 1
+                total_row.extend([round(t_val, 6), 1.0 if abs(t_val) > 1e-10 else 0.0])
+            rows.append(total_row)
+        n_rows = len(rows)
+        rng = ws.Range(ws.Cells(row0, col0), ws.Cells(row0 + n_rows - 1, col0 + n_cols - 1))
+        rng.Value = rows
 
     def generate_mermaid(self) -> str:
         lines = ["graph LR"]
