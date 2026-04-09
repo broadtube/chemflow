@@ -656,6 +656,12 @@ class Flowsheet:
 
     def _solve_with_bounds(self, x0, bounds, **kwargs) -> dict:
         """least_squares を使用して bounds 付きで求解する。"""
+        # 高精度設定のデフォルト値
+        kwargs.setdefault('ftol', 1e-15)
+        kwargs.setdefault('xtol', 1e-15)
+        kwargs.setdefault('gtol', 1e-15)
+        kwargs.setdefault('max_nfev', 20000)
+
         lower, upper = bounds
 
         # スカラーの場合は配列に展開
