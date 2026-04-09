@@ -52,7 +52,7 @@ def run_pattern(purge_rate, selectivities, flow_rate, conversion):
         selectivities=selectivities,
     )
     ReactOut.name = 'ReactOut'
-    ReactOut.T_celsius = 250
+    ReactOut.T_celsius = 280
     ReactOut.P_input = '5MPaG'
     ReactOut.phase = 'Gas'
 
@@ -81,7 +81,7 @@ def run_pattern(purge_rate, selectivities, flow_rate, conversion):
     constrain(lambda: Purge.total_molar_flow - Gas.total_molar_flow * purge_rate)
 
     # 求解（小流量対応のためbounds使用）
-    solve(bounds=(0, np.inf))
+    solve(bounds=(0, np.inf), ftol=1e-15, xtol=1e-15, gtol=1e-15, max_nfev=20000)
 
     # 表示順序設定
     set_component_order(['H2', 'CO', 'CO2', 'CH4', 'H2O', 'CH3CHO', 'CH3COOH', 'N2'])
